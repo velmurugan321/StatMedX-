@@ -70,6 +70,66 @@ def frequencies(df: pd.DataFrame, variables: list[str]) -> dict:
     return result("Frequency tables", blocks)
 
 
+def fisher_rc(ct) -> float:
+    """Two-sided Fisher exact p for an r×c table: full enumeration of tables with
+    the observed margins, probability ordering p_t ≤ p_obs (identical to
+    R's fisher.test and Stata's tabulate, exact)."""
+    from math import lgamma, exp
+
+    ct = np.asarray(ct, dtype=np.int64)
+    r, c = ct.shape
+    n_rows = ct.sum(axis=1)
+    n_cols = ct.sum(axis=0)
+    n_total = int(ct.sum())
+    lrow = [lgamma(v + 1) for v in n_rows]
+    lcol = [lgamma(v + 1) for v in n_cols]
+    ln_fact_total = lgamma(n_total + 1)
+
+    def log_prob(table):
+        # p(table) = [Π row_i! · Π col_j!] / [N! · Π x_ij!]  (multivariate hypergeometric)
+        s = sum(lrow) + sum(lcol) - ln_fact_total
+        for rowv in table:
+            for cell in rowv:
+                s -= lgamma(cell + 1)
+        return s
+
+    tables = []
+
+    def allocate(j, remaining_rows, acc):
+        if j == c - 1:
+            if all(rr >= 0 for rr in remaining_rows):
+                # transpose column-allocations → row-major table
+                tables.append([[acc[jj][i] for jj in range(len(acc))] + [remaining_rows[i]]
+                               for i in range(r)])
+            return
+        target = int(n_cols[j])
+
+        def spread(i, left, row_acc):
+            if i == r - 1:
+                if 0 <= left <= remaining_rows[i]:
+                    spread_next = list(row_acc) + [left]
+                    new_rows = [rr - v for rr, v in zip(remaining_rows, spread_next)]
+                    allocate(j + 1, new_rows, acc + [spread_next])
+                return
+            for v in range(0, min(left, remaining_rows[i]) + 1):
+                spread(i + 1, left - v, row_acc + [v])
+
+        spread(0, target, [])
+
+    allocate(0, [int(v) for v in n_rows], [])
+    if len(tables) > 2_000_000:
+        return float("nan")
+    log_probs = [log_prob(t) for t in tables]
+    m = max(log_probs)
+    probs = [exp(lp - m) for lp in log_probs]
+    z = sum(probs)
+    probs = [p_ / z for p_ in probs]
+    obs_list = [[int(v) for v in row] for row in ct.tolist()]
+    idx = next(i for i, t in enumerate(tables) if t == obs_list)
+    p_obs = probs[idx]
+    return float(sum(p_ for i, p_ in enumerate(probs) if p_ <= p_obs * (1 + 1e-7)))
+
+
 def crosstab(df: pd.DataFrame, row: str, col: str, chi2: bool = False, fisher: bool = False, percent: bool = True):
     """Crosstab with optional chi-square / Fisher (also used by Module 04 tests)."""
     ct = pd.crosstab(df[row].astype("object"), df[col].astype("object"))
@@ -95,9 +155,13 @@ def crosstab(df: pd.DataFrame, row: str, col: str, chi2: bool = False, fisher: b
                           f"(cells with expected <5: {cells_lt5}/{expected.size})")
         lr = __import__("scipy").stats.chi2_contingency(ct, lambda_="log-likelihood")
         stat_lines.append(f"Likelihood-ratio χ²({lr[2]}) = {lr[0]:.3f}, p = {pval(lr[1])}")
-    if fisher and ct.shape == (2, 2):
-        odds, p = __import__("scipy").stats.fisher_exact(ct.values)
-        stat_lines.append(f"Fisher exact p = {pval(p)};  odds ratio (2×2) = {num(odds)}")
+    if fisher:
+        if ct.shape == (2, 2):
+            odds, p = __import__("scipy").stats.fisher_exact(ct.values)
+            stat_lines.append(f"Fisher exact p = {pval(p)};  odds ratio (2×2) = {num(odds)}")
+        else:
+            p_rc = fisher_rc(ct.values)
+            stat_lines.append(f"Fisher exact p = {pval(p_rc)} (r×c, full enumeration)")
     if stat_lines:
         blocks.append(text("<br>".join(stat_lines)))
     return result(f"Crosstab: {row} × {col}", blocks)

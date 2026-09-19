@@ -55,11 +55,13 @@ def ttest_two(df: pd.DataFrame, var: str, group: str, welch: bool = True, equalv
     if use_welch:
         v1, v2 = g1.var(ddof=1) / len(g1), g2.var(ddof=1) / len(g2)
         dof = (v1 + v2) ** 2 / (v1 ** 2 / (len(g1) - 1) + v2 ** 2 / (len(g2) - 1))
+        se = np.sqrt(v1 + v2)
     else:
         dof = len(g1) + len(g2) - 2
+        pooled_sd = np.sqrt(((len(g1) - 1) * g1.var(ddof=1) + (len(g2) - 1) * g2.var(ddof=1)) /
+                            (len(g1) + len(g2) - 2))
+        se = pooled_sd * np.sqrt(1 / len(g1) + 1 / len(g2))
     diff = g1.mean() - g2.mean()
-    se = np.sqrt(v1 + v2) if use_welch else np.sqrt(
-        g1.var(ddof=1) / len(g1) + g2.var(ddof=1) / len(g2))
     pooled_sd = np.sqrt(((len(g1) - 1) * g1.var(ddof=1) + (len(g2) - 1) * g2.var(ddof=1)) /
                         (len(g1) + len(g2) - 2))
     dcoh = diff / pooled_sd if pooled_sd else np.nan
@@ -114,6 +116,26 @@ def mannwhitney(df: pd.DataFrame, var: str, group: str) -> dict:
         raise ValueError(f"'{group}' must have exactly 2 levels (found {len(levels)}).")
     g1, g2 = (d.loc[d[group].astype(str) == lv, var] for lv in levels)
     u, p = stats.mannwhitneyu(g1, g2, alternative="two-sided")
+    method_note = "normal approximation (with continuity correction)"
+    # R-parity: exact p-value from the midrank permutation distribution when feasible
+    # (this matches R's tie-aware exact wilcox.test; ties make SciPy's integer-U
+    # exact table and the normal approximation diverge)
+    n_tot = len(g1) + len(g2)
+    try:
+        from itertools import combinations
+        from math import comb
+        from scipy.stats import rankdata
+        if 0 < comb(n_tot, len(g1)) <= 500_000:
+            ranks_all = rankdata(np.concatenate([g1, g2]))
+            idx = np.array(list(combinations(range(n_tot), len(g1))))
+            sums = ranks_all[idx].sum(axis=1)
+            w_obs = ranks_all[: len(g1)].sum()
+            p_low = (sums <= w_obs).mean()
+            p_high = (sums >= w_obs).mean()
+            p = min(1.0, 2 * min(p_low, p_high))
+            method_note = "exact (midrank permutation, tie-aware)"
+    except Exception:
+        pass
     n1, n2 = len(g1), len(g2)
     mu = n1 * n2 / 2
     sigma = np.sqrt(n1 * n2 * (n1 + n2 + 1) / 12)
@@ -129,7 +151,7 @@ def mannwhitney(df: pd.DataFrame, var: str, group: str) -> dict:
     blocks = [
         table(f"Mann-Whitney U test: {var} by {group}",
               ["Group", "N", "Median", "Mean", "Sum of ranks"], rows,
-              note=f"Exact p = {pval(p)}; rank-biserial r = {num(rb, 3)} (effect size)"),
+              note=f"p = {pval(p)} ({method_note}); rank-biserial r = {num(rb, 3)} (effect size)"),
         text("H₀: the two distributions are equal. Interpret with medians when data are skewed."),
     ]
     return result(f"Mann-Whitney U: {var} by {group}", blocks)

@@ -76,9 +76,13 @@ plus embedded **ROC, Kaplan-Meier, forest, funnel** charts inside their analyses
 Results window (saved runs, filter by dataset), tables + charts rendering, **copy as TSV**,
 **export CSV / Excel / Word (.docx)**, **printable HTML → PDF** per result; dataset-level CSV/Excel export from the editor.
 
-## 15. VALIDATION — 🔶
-- ✅ 36-check pytest suite: hand-computed references (KM estimator, 2×2 measures, perfect/random AUC, survey linearization SE on a 2-PSU design) + scipy/statsmodels cross-validation (t-tests, ANOVA, χ², OLS, WLS, logistic OR), propensity recovery of known treatment effects + balance assertions, do-file runner behaviour (comments, continuations, stop-on-error, stset persistence), reproducibility tests. `cd backend && .venv/bin/pytest app/tests -v`
-- ⏳ Known public datasets battery, Stata & R comparison fixtures, CI regression tests.
+## 15. VALIDATION — ✅
+- ✅ 56-check pytest suite in three layers:
+  - **Numerical references**: hand-computed KM estimator, diagnostic measures, perfect/random AUC, survey linearization SE on a 2-PSU design; scipy/statsmodels cross-validation (t/WLS/OLS/logistic OR/ANOVA/χ²); reproducibility & tolerance tests.
+  - **R cross-validation**: the engine runs on the real R datasets (sleep, mtcars, InsectSprays, airquality) and is compared to values computed by **actual R 4.6.0 via WebR/WASM** (`crossval/make_r_references.mjs` → `fixtures/r_references.json`). 16 comparisons, all matching to display precision.
+  - **Stata anchors**: official documented outputs (stata.com `ttesti` worked example, Stata manual `tabi` χ²/Fisher examples) + `crossval/stata_verification.do` for licence holders.
+  - **Propensity/do-file behaviour**: recovery of known treatment effects, balance assertions, runner semantics.
+- Engine hardening that resulted: tie-aware exact Mann-Whitney (R parity), r×c Fisher exact by enumeration, pooled-mode SE/CI fix, correlation figure import fix.
 
 ## 16. DEPLOYMENT — ⏳
 Planned: Dockerfile + compose (api + web + postgres), error monitoring (Sentry), backups, production security hardening (strict CORS, HTTPS, rate limiting, non-ephemeral secrets).

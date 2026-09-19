@@ -34,6 +34,10 @@ sample datasets (`cardio_rct` — 250-patient RCT, `meta_studies` — 12 trials)
 cd backend && .venv/bin/pytest app/tests -v
 ```
 
+56 checks including a **real-R cross-validation battery** (actual R 4.6 via
+WebR/WASM, run on sleep/mtcars/InsectSprays/airquality) and official Stata
+documented-output anchors — see `docs/VALIDATION.md` and `crossval/`.
+
 ## Architecture
 
 ```
@@ -74,7 +78,7 @@ frontend/
 | 12 | Command system (console ~50 commands, parser, history, **do-file editor** with `///` continuations, comments, stop-on-error, logs) | ✅ |
 | 13 | Graphics (histogram, box, bar, scatter, ROC, KM, forest) | ✅ |
 | 14 | Results (window, copy, CSV, Excel, Word, PDF-print) | ✅ |
-| 15 | Validation (36 pytest checks vs known values) — Stata/R cross-validation next | 🔶 |
+| 15 | Validation (56 pytest checks) — **R 4.6 cross-validation battery (WebR) + Stata documented anchors**, r×c Fisher, tie-aware exact Mann-Whitney | ✅ |
 | 16 | Deployment (Dockerfile, monitoring, backups) | ⏳ |
 
 ## Notes

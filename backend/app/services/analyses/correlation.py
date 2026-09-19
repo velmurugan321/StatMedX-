@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from ..blocks import figure, num, pval, result, table, text
+from ..blocks import figure, num, pval, result, scatter_spec, table, text
 from . import graphics
 
 
@@ -39,7 +39,7 @@ def correlate(df: pd.DataFrame, variables: list[str], method: str = "pearson") -
         table(f"{method.capitalize()} correlation matrix (N={n})", header, rows,
               note="* p<0.05  ** p<0.01"),
         table("p-values", header, rows_p),
-        figure("Scatter matrix (first pair preview)", graphics.scatter_spec(
+        figure("Scatter matrix (first pair preview)", scatter_spec(
             d[variables[0]], d[variables[-1]], title=f"{variables[0]} vs {variables[-1]}"))
         if k >= 2 else text(""),
     ]
@@ -61,6 +61,6 @@ def corr_pair(df: pd.DataFrame, x: str, y: str) -> dict:
     blocks = [
         table(f"Correlation: {x} × {y} (N = {len(d)})",
               ["Method", "Coefficient", "95% CI", "r²", "SE(Fisher z)", "p"], rows),
-        figure("Scatter plot", graphics.scatter_spec(df[x], df[y], title=f"{y} vs {x}")),
+        figure("Scatter plot", scatter_spec(df[x], df[y], title=f"{y} vs {x}")),
     ]
     return result(f"Correlation: {x} × {y}", blocks)
