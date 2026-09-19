@@ -72,6 +72,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <NavItem to="/" icon="⌂" label="Dashboard" onClick={() => setMobileOpen(false)} />
           <NavItem to="/data" icon="▦" label="Data editor" onClick={() => setMobileOpen(false)} />
           <NavItem to="/console" icon="›_" label="Command console" onClick={() => setMobileOpen(false)} />
+          <NavItem to="/dofile" icon="⌨" label="Do-file editor" onClick={() => setMobileOpen(false)} />
           <NavItem to="/results" icon="🗂" label="Results window" onClick={() => setMobileOpen(false)} />
           <div className="pt-3" />
           {GROUPS.map((g) => (

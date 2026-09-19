@@ -29,6 +29,7 @@ import pandas as pd
 
 from ..models import Dataset
 from . import analyses
+from .blocks import num
 from .dataio import save_df, sync_variables
 
 HELP_TEXT = """<b>StatMedX command console — supported commands</b><br>
@@ -45,23 +46,30 @@ HELP_TEXT = """<b>StatMedX command console — supported commands</b><br>
 <code>generate bmi = weight / (height/100)^2</code> / <code>recode sex (1=0) (2=1), gen(sex2)</code><br>
 <code>keep if age &gt; 40</code> / <code>drop if bmi &gt; 40</code> / <code>sort age</code><br>
 <code>histogram age</code> / <code>graph box chol, by(group)</code> / <code>scatter chol age</code><br>
-<code>duplicates report</code> / <code>misstable summarize</code> / <code>describe</code> / <code>list 10</code>"""
+<code>duplicates report</code> / <code>misstable summarize</code> / <code>describe</code> / <code>list 10</code><br>
+<code>psmatch treat y x1 x2, caliper(0.2)</code> — propensity matching · <code>iptw treat y x1 x2</code> — weighting<br>
+<code>svyset weight [, strata(s) psu(p)]</code> → <code>svymean y</code> / <code>svyprop g</code> / <code>svyreg y x1</code> / <code>svylogit y x1</code>"""
 
 
 class CommandContext:
-    """Per-dataset session state (survival settings etc.)."""
+    """Per-dataset session state (survival settings, survey design)."""
 
     def __init__(self, dataset: Dataset):
         self.dataset = dataset
-        stset = (dataset.meta or {}).get("stset")
-        self.stset = stset if stset else None
+        meta = dataset.meta or {}
+        self.stset = meta.get("stset")
+        self.svyset = meta.get("svyset")
 
-    def save_stset(self):
+    def save_session(self):
         meta = dict(self.dataset.meta or {})
         if self.stset:
             meta["stset"] = self.stset
         else:
             meta.pop("stset", None)
+        if self.svyset:
+            meta["svyset"] = self.svyset
+        else:
+            meta.pop("svyset", None)
         self.dataset.meta = meta
 
 
@@ -137,8 +145,9 @@ def execute(dataset: Dataset, df: pd.DataFrame, cmdline: str) -> tuple[dict, pd.
         return R([{"type": "text", "content": "Use the ⏱ history panel below the console."}]), df, mutated, ""
     if cmd == "clear":
         ctx.stset = None
-        ctx.save_stset()
-        return R([{"type": "text", "content": "Session settings cleared (stset reset)."}]), df, mutated, ""
+        ctx.svyset = None
+        ctx.save_session()
+        return R([{"type": "text", "content": "Session settings cleared (stset, svyset reset)."}]), df, mutated, ""
 
     # ---------- data management ----------
     if cmd in ("generate", "gen"):
@@ -257,7 +266,7 @@ def execute(dataset: Dataset, df: pd.DataFrame, cmdline: str) -> tuple[dict, pd.
             if not fail:
                 raise ValueError("stset requires , failure(var)")
             ctx.stset = {"time": tvar, "event": fail}
-            ctx.save_stset()
+            ctx.save_session()
             n = int((df[fail] > 0).sum())
             return R([{"type": "text", "content":
                        f"Survival data st-set: time = <b>{tvar}</b>, failure = <b>{fail}</b>; "
@@ -367,5 +376,49 @@ def execute(dataset: Dataset, df: pd.DataFrame, cmdline: str) -> tuple[dict, pd.
         if kind == "histogram":
             return analyses.run("graph_histogram", df, {"variable": var, "by": by}), df, mutated, ""
         raise ValueError("graph box|bar|histogram var [, by(g)]")
+
+    # ---------- propensity score ----------
+    if cmd in ("psmatch", "iptw", "ps"):
+        toks = tokenize(args)
+        if len(toks) < 3:
+            raise ValueError(f"{cmd} treatment outcome covariates… — need treatment, outcome, ≥1 covariate")
+        treat, outcome = toks[0], toks[1]
+        covs = toks[2:]
+        method = "match" if cmd == "psmatch" else "iptw"
+        calv = 0.2
+        if isinstance(opts, dict) and opts.get("caliper"):
+            try:
+                calv = float(opts["caliper"])
+            except ValueError:
+                pass
+        return analyses.run("propensity", df, {"treatment": treat, "outcome": outcome,
+                                               "covariates": covs, "method": method, "caliper": calv}), df, mutated, ""
+
+    # ---------- survey ----------
+    if cmd == "svyset":
+        wvar = atoks[0] if atoks else None
+        if not wvar:
+            raise ValueError("svyset weightvar [, strata(s) psu(p)]")
+        ctx.svyset = {"weight": wvar, "strata": opts.get("strata") if isinstance(opts, dict) else None,
+                      "psu": opts.get("psu") if isinstance(opts, dict) else None}
+        ctx.save_session()
+        return R([{"type": "text", "content":
+                   f"Survey design set: weight = <b>{wvar}</b>"
+                   + (f", strata = <b>{ctx.svyset['strata']}</b>" if ctx.svyset["strata"] else "")
+                   + (f", PSU = <b>{ctx.svyset['psu']}</b>" if ctx.svyset["psu"] else "") + "."}]), df, mutated, ""
+    if cmd in ("svymean", "svyprop", "svyreg", "svylogit", "svytotal"):
+        if not ctx.svyset:
+            raise ValueError("Run 'svyset weightvar [, strata(s) psu(p)]' first.")
+        sv = ctx.svyset
+        if cmd in ("svymean", "svytotal"):
+            return analyses.run("survey_mean", df, {"var": atoks[0], "weight": sv["weight"],
+                                                    "strata": sv.get("strata"), "psu": sv.get("psu")}), df, mutated, ""
+        if cmd == "svyprop":
+            return analyses.run("survey_prop", df, {"var": atoks[0], "weight": sv["weight"],
+                                                    "strata": sv.get("strata"), "psu": sv.get("psu")}), df, mutated, ""
+        fam = "binomial" if cmd == "svylogit" or (isinstance(opts, dict) and opts.get("binomial")) else "gaussian"
+        return analyses.run("survey_reg", df, {"y": atoks[0], "xs": atoks[1:], "weight": sv["weight"],
+                                               "strata": sv.get("strata"), "psu": sv.get("psu"),
+                                               "family": fam}), df, mutated, ""
 
     raise ValueError(f"Command '{cmd}' not recognized. Type <code>help</code> for the list of commands.")

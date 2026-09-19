@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import CORS_ORIGINS
 from .database import Base, SessionLocal, engine
-from .routers import analysis, auth, datasets
+from .routers import analysis, auth, datasets, dofiles
 from .seed import seed
 
 app = FastAPI(title="StatMedX API", version="0.2.0",
@@ -22,6 +22,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(datasets.router)
 app.include_router(analysis.router)
+app.include_router(dofiles.router)
 
 
 @app.on_event("startup")

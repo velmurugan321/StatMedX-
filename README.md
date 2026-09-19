@@ -69,12 +69,12 @@ frontend/
 | 07 | Diagnostic accuracy (2×2, sens/spec/PPV/NPV/PLR/NLR + CIs) | ✅ |
 | 08 | ROC (curve, AUC, CI, threshold table, comparison) | ✅ |
 | 09 | Survival (KM, log-rank, Cox, HR) | ✅ |
-| 10 | Advanced (mixed models, GEE, repeated measures) — propensity/survey next | 🔶 |
+| 10 | Advanced (mixed models, GEE, repeated measures, propensity scores: matching + IPTW, complex survey: means/proportions/regression) | ✅ |
 | 11 | Meta-analysis (fixed/random, heterogeneity, forest/funnel, Egger) | ✅ |
-| 12 | Command system (console, parser, history, re-run) — do-file editor next | 🔶 |
+| 12 | Command system (console ~50 commands, parser, history, **do-file editor** with `///` continuations, comments, stop-on-error, logs) | ✅ |
 | 13 | Graphics (histogram, box, bar, scatter, ROC, KM, forest) | ✅ |
 | 14 | Results (window, copy, CSV, Excel, Word, PDF-print) | ✅ |
-| 15 | Validation (20 pytest checks vs known values) — Stata/R cross-validation next | 🔶 |
+| 15 | Validation (36 pytest checks vs known values) — Stata/R cross-validation next | 🔶 |
 | 16 | Deployment (Dockerfile, monitoring, backups) | ⏳ |
 
 ## Notes

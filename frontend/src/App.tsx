@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import DataEditor from "./pages/DataEditor";
 import Analysis from "./pages/Analysis";
 import Console from "./pages/Console";
+import DoFile from "./pages/DoFile";
 import Results from "./pages/Results";
 
 function Shell() {
@@ -35,6 +36,7 @@ function Shell() {
         <Route path="/data" element={<DataEditor />} />
         <Route path="/analysis/:moduleId" element={<Analysis />} />
         <Route path="/console" element={<Console />} />
+        <Route path="/dofile" element={<DoFile />} />
         <Route path="/results" element={<Results />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

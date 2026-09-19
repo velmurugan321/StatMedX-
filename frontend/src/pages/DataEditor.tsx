@@ -410,6 +410,23 @@ export default function DataEditor() {
   );
 }
 
+async function exportDataset(dsid: number, format: "csv" | "excel" = "csv") {
+  const res = await fetch(`/api/datasets/${dsid}/transform`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${localStorage.getItem("statmedx_token") || ""}`,
+    },
+    body: JSON.stringify({ op: "export_dataset", params: { format } }),
+  });
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `dataset.${format === "excel" ? "xlsx" : "csv"}`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 function VariableLabel({ dsid, name }: { dsid: number; name: string }) {
   const [label, setLabel] = useState<string>("");
   const [loaded, setLoaded] = useState(false);

@@ -3,6 +3,7 @@ import { api, clearAuth, getUser, setAuth } from "./api";
 
 interface Ctx {
   user: any | null;
+  setUser: (u: any | null) => void;
   datasets: any[];
   activeDataset: any | null;
   setActiveDataset: (d: any | null) => void;
@@ -62,6 +63,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     <AppCtx.Provider
       value={{
         user,
+        setUser,
         datasets,
         activeDataset,
         setActiveDataset,

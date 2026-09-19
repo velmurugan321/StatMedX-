@@ -239,6 +239,50 @@ export const MODULES: ModuleDef[] = [
     blurb: "Within-subject ANOVA across 2+ measures (wide format) + Bonferroni pairs.",
     fields: [{ key: "measures", label: "Repeated measures (2+)", kind: "vars", multiple: true, numeric: true }],
   },
+  {
+    id: "propensity", title: "Propensity scores", icon: "⚖", group: "10 · Advanced",
+    blurb: "PS matching (1:1, caliper) or IPTW — balance diagnostics, overlap & love plots, treatment effects.",
+    fields: [
+      { key: "treatment", label: "Treatment variable", kind: "var" },
+      { key: "treat_level", label: "Positive level (if not 0/1)", kind: "text", optional: true, help: "e.g. Drug — everything else becomes control" },
+      { key: "outcome", label: "Outcome variable", kind: "var", numeric: true, optional: true, help: "Leave out for balance-only analysis" },
+      { key: "covariates", label: "Confounders", kind: "vars", multiple: true, numeric: true },
+      { key: "method", label: "Method", kind: "select", options: ["match", "iptw"], default: "match" },
+      { key: "caliper", label: "Caliper (×SD logit PS)", kind: "number", default: 0.2 },
+    ],
+  },
+  {
+    id: "survey_mean", title: "Survey: weighted means", icon: "◍", group: "10 · Advanced",
+    blurb: "Design-based means with Taylor-linearized SEs, CI on design df, DEFF.",
+    fields: [
+      { key: "var", label: "Variable", kind: "var", numeric: true },
+      { key: "weight", label: "Weight variable", kind: "var", numeric: true },
+      { key: "strata", label: "Strata (optional)", kind: "var", optional: true },
+      { key: "psu", label: "PSU / cluster (optional)", kind: "var", optional: true },
+    ],
+  },
+  {
+    id: "survey_prop", title: "Survey: proportions", icon: "◍", group: "10 · Advanced",
+    blurb: "Weighted category proportions with design-based SEs and CIs.",
+    fields: [
+      { key: "var", label: "Categorical variable", kind: "var" },
+      { key: "weight", label: "Weight variable", kind: "var", numeric: true },
+      { key: "strata", label: "Strata (optional)", kind: "var", optional: true },
+      { key: "psu", label: "PSU / cluster (optional)", kind: "var", optional: true },
+    ],
+  },
+  {
+    id: "survey_reg", title: "Survey: regression", icon: "🕸", group: "10 · Advanced",
+    blurb: "Survey-weighted linear or logistic regression with linearized SEs.",
+    fields: [
+      { key: "y", label: "Dependent variable", kind: "var", numeric: true },
+      { key: "xs", label: "Independent variables", kind: "vars", multiple: true, numeric: true },
+      { key: "weight", label: "Weight variable", kind: "var", numeric: true },
+      { key: "strata", label: "Strata (optional)", kind: "var", optional: true },
+      { key: "psu", label: "PSU / cluster (optional)", kind: "var", optional: true },
+      { key: "family", label: "Family", kind: "select", options: ["gaussian", "binomial"], default: "gaussian" },
+    ],
+  },
   // ---- 11 Meta-analysis ----
   {
     id: "meta", title: "Meta-analysis", icon: "🌲", group: "11 · Meta-analysis",

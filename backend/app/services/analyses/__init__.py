@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from . import correlation, descriptive, diagnostic, graphics, meta, regression, roc, survival, tests_stats, advanced
+from . import correlation, descriptive, diagnostic, graphics, meta, propensity, regression, roc, survey, survival, tests_stats, advanced
 
 
 def run(module: str, df: pd.DataFrame, params: dict) -> dict:
@@ -69,6 +69,17 @@ def run(module: str, df: pd.DataFrame, params: dict) -> dict:
                             family=p.get("family", "gaussian"), corr=p.get("corr", "exchangeable"))
     if module == "repeated":
         return advanced.repeated_measures(df, p["measures"], between=p.get("between"))
+    if module == "propensity":
+        return propensity.propensity(df, p["treatment"], p["covariates"], outcome=p.get("outcome"),
+                                     method=p.get("method", "match"), caliper=float(p.get("caliper", 0.2)),
+                                     treat_level=p.get("treat_level"), n_boot=int(p.get("n_boot", 200)))
+    if module == "survey_mean":
+        return survey.survey_mean(df, p["var"], p["weight"], strata=p.get("strata"), psu=p.get("psu"))
+    if module == "survey_prop":
+        return survey.survey_prop(df, p["var"], p["weight"], strata=p.get("strata"), psu=p.get("psu"))
+    if module == "survey_reg":
+        return survey.survey_reg(df, p["y"], p["xs"], p["weight"], strata=p.get("strata"),
+                                 psu=p.get("psu"), family=p.get("family", "gaussian"))
     if module == "meta":
         return meta.meta(df, p["effect_col"], p["se_col"], study_col=p.get("study_col"),
                          measure=p.get("measure", "Effect size"))

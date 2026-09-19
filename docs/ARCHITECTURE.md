@@ -55,17 +55,18 @@ Curve(s), **AUC** with Hanley-McNeil SE & 95% CI, **optimal cut-point** (Youden)
 **Kaplan-Meier** curves (censor marks, median survival) by group, **log-rank test**
 (multigroup, pooled O−E), **Cox regression** (Efron ties) → HRs with CIs, LR test, C-index.
 
-## 10. ADVANCED ANALYSIS — 🔶
+## 10. ADVANCED ANALYSIS — ✅
 - ✅ Linear **mixed models** (random intercept/slope, ICC), **GEE** (gaussian/binomial/poisson × exchangeable/AR1/unstructured), **repeated-measures ANOVA** (+GG ε, Bonferroni pairs).
-- ⏳ Propensity scores (matching/IPTW), complex survey analysis.
+- ✅ **Propensity scores**: logistic PS model; 1:1 greedy nearest-neighbour **matching without replacement** (caliper = k×SD(logit PS), Austin standard) → ATT with paired-difference CI; **IPTW** (stabilized, trimmed at PS ∈ [0.01, 0.99]) → ATE (Hájek) with bootstrap SE + weighted OR for binary outcomes; covariate balance SMD table before/after with % reduction, overlap histogram, love plot, ESS.
+- ✅ **Complex survey analysis** (Taylor linearization): design = weights + strata + PSU; weighted **means** and **proportions** with design-based SEs, t CIs on design df (n_PSU − n_strata), DEFF; **survey linear & logistic regression** with linearized (stratum-centred PSU) sandwich SEs; singleton-stratum warnings. Console: `svyset`, `svymean`, `svyprop`, `svyreg`, `svylogit`.
 
 ## 11. META-ANALYSIS — ✅
 Inverse-variance **fixed effects** + **DerSimonian-Laird random effects**, **Q / I² / H / τ² heterogeneity**,
 custom **forest plot**, **funnel plot**, **Egger's test** for publication bias.
 
-## 12. COMMAND SYSTEM — 🔶
-- ✅ **Command console** with ~40 Stata-style commands (`summarize, tabulate, ttest, ranksum, oneway, kwallis, correlate, regress, logistic, poisson, nbreg, mlogit, roc, stset/sts/stcox, generate, recode, keep/drop if, sort, duplicates, misstable, histogram, graph box/bar, scatter, help`), options parsing (`by()`, `detail`, `chi2`, `robust`, `failure()`, `spearman`…), ↑/↓ **history**, DB-backed command history, dataset-mutating commands.
-- ⏳ Do-file editor (multi-line scripts), re-run across datasets.
+## 12. COMMAND SYSTEM — ✅
+- ✅ **Command console** with ~50 Stata-style commands (`summarize, tabulate, ttest, ranksum, oneway, kwallis, correlate, regress, logistic, poisson, nbreg, mlogit, roc, stset/sts/stcox, svyset/svymean/svyprop/svyreg/svylogit, psmatch/iptw, generate, recode, keep/drop if, sort, duplicates, misstable, histogram, graph box/bar, scatter, help`), options parsing (`by()`, `detail`, `chi2`, `robust`, `failure()`, `caliper()`, `strata()`, `psu()`, `spearman`…), ↑/↓ **history**, DB-backed history, session state (stset, svyset persist per dataset).
+- ✅ **Do-file editor**: save/open/delete scripts, `*` and `//` comments, `///` line continuation, stop-on-error toggle, sequential execution against the active dataset (mutations persist — generate/recode/stset all carry forward), stacked log with per-command results, downloadable `.txt` log.
 
 ## 13. GRAPHICS — ✅
 Histogram (+small multiples), box plot, bar chart (count/mean/sum), scatter (+fit line) —
@@ -76,7 +77,7 @@ Results window (saved runs, filter by dataset), tables + charts rendering, **cop
 **export CSV / Excel / Word (.docx)**, **printable HTML → PDF** per result; dataset-level CSV/Excel export from the editor.
 
 ## 15. VALIDATION — 🔶
-- ✅ 20-check pytest suite: hand-computed references (KM estimator, 2×2 measures, perfect-AUC) + scipy/statsmodels cross-validation (t-tests, ANOVA, χ², OLS, logistic OR), reproducibility (numerical tolerance) tests. `cd backend && .venv/bin/pytest app/tests -v`
+- ✅ 36-check pytest suite: hand-computed references (KM estimator, 2×2 measures, perfect/random AUC, survey linearization SE on a 2-PSU design) + scipy/statsmodels cross-validation (t-tests, ANOVA, χ², OLS, WLS, logistic OR), propensity recovery of known treatment effects + balance assertions, do-file runner behaviour (comments, continuations, stop-on-error, stset persistence), reproducibility tests. `cd backend && .venv/bin/pytest app/tests -v`
 - ⏳ Known public datasets battery, Stata & R comparison fixtures, CI regression tests.
 
 ## 16. DEPLOYMENT — ⏳
