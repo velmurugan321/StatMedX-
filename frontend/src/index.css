@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+:root {
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+code, pre, .mono {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* thin result tables */
+.smx-table { border-collapse: collapse; font-size: 12.5px; width: 100%; }
+.smx-table th {
+  background: #f1f5f9; font-weight: 600; color: #334155;
+  border: 1px solid #e2e8f0; padding: 5px 9px; text-align: left; white-space: nowrap;
+}
+.smx-table td {
+  border: 1px solid #e8edf3; padding: 4px 9px; color: #1e293b; white-space: nowrap;
+}
+.smx-table tr:nth-child(even) td { background: #f8fafc; }

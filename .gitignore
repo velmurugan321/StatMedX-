@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+backend/.venv/
+backend/statmedx.db
+backend/data/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Env / misc
+.env
+*.log
+.DS_Store
