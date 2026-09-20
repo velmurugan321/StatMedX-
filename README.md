@@ -84,5 +84,8 @@ frontend/
 ## Notes
 
 - SQLite by default (`backend/statmedx.db`); swap `DATABASE_URL` for PostgreSQL.
-- JWT auth with PBKDF2 password hashing; per-user dataset isolation.
+- JWT auth with PBKDF2 password hashing; strict per-user dataset isolation.
+- **Never hardcodes a JWT secret**: set `STATMEDX_SECRET` in production (the app
+  refuses to start without it); in dev a random ephemeral secret is generated
+  per process (sessions reset on restart).
 - Data files are pickled DataFrames under `backend/data/` (gitignored).

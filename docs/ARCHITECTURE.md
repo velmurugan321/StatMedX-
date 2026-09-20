@@ -12,7 +12,7 @@ Sixteen-module plan; status tracked below. ✅ = working in this build ·
 - **Backend**: FastAPI + pandas/SciPy/statsmodels; result model = `{title, blocks:[text|table|figure|code]}` shared by every module.
 - **Database layer**: SQLAlchemy + SQLite (dev) / PostgreSQL-ready (swap `DATABASE_URL`). Tables: users, datasets, variables (Variable View metadata), analysis_runs, command_history.
 - **Authentication**: JWT bearer tokens (72 h), PBKDF2-SHA256 (200k iterations) password hashing, per-user dataset isolation, demo workspace auto-login.
-- **Security**: parameterised ORM queries, dtype-validated cell edits, file type/size allowlist on upload, CORS config point for production hardening.
+- **Security**: parameterised ORM queries, dtype-validated cell edits, file type/size allowlist on upload, strict per-user tenant isolation (no demo bypasses — IDOR regression-tested), JWT secret never hardcoded: production **refuses to start** without `STATMEDX_SECRET`, dev uses an ephemeral random secret with a warning; CORS config point for production hardening.
 
 ## 02. DATA MANAGEMENT — ✅
 - Import: **CSV, TXT/TSV, Excel (.xlsx/.xls), Stata (.dta), SPSS (.sav)** + paste-any-table.
