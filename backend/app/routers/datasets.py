@@ -27,7 +27,7 @@ class DatasetOut(BaseModel):
 
 def _own(db: Session, user: User, dsid: int) -> Dataset:
     ds = db.get(Dataset, dsid)
-    if ds is None or (ds.owner_id != user.id and not user.is_demo):
+    if ds is None or (ds.owner_id != user.id):
         raise HTTPException(404, "Dataset not found")
     return ds
 

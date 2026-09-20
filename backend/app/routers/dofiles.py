@@ -31,7 +31,7 @@ class RunIn(BaseModel):
 
 def _own(db: Session, user: User, fid: int) -> DoFile:
     f = db.get(DoFile, fid)
-    if f is None or (f.user_id != user.id and not user.is_demo):
+    if f is None or (f.user_id != user.id):
         raise HTTPException(404, "Do-file not found")
     return f
 
@@ -108,7 +108,7 @@ def _preprocess(content: str) -> list[tuple[int, str]]:
 def run_dofile(fid: int, body: RunIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     f = _own(db, user, fid)
     ds = db.get(Dataset, body.dataset_id)
-    if ds is None or (ds.owner_id != user.id and not user.is_demo):
+    if ds is None or (ds.owner_id != user.id):
         raise HTTPException(404, "Dataset not found")
     df = dataio.load_df(ds)
     steps = _preprocess(f.content)

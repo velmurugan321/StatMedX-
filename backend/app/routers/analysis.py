@@ -25,7 +25,7 @@ class RunIn(BaseModel):
 @router.post("/analysis")
 def run_analysis(body: RunIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     ds = db.get(Dataset, body.dataset_id)
-    if ds is None or (ds.owner_id != user.id and not user.is_demo):
+    if ds is None or (ds.owner_id != user.id):
         raise HTTPException(404, "Dataset not found")
     df = dataio.load_df(ds)
     try:
@@ -51,7 +51,7 @@ class CommandIn(BaseModel):
 @router.post("/commands")
 def run_command(body: CommandIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     ds = db.get(Dataset, body.dataset_id)
-    if ds is None or (ds.owner_id != user.id and not user.is_demo):
+    if ds is None or (ds.owner_id != user.id):
         raise HTTPException(404, "Dataset not found")
     df = dataio.load_df(ds)
     ok = True
@@ -102,7 +102,7 @@ def list_results(dataset_id: int | None = None, limit: int = 50,
 @router.get("/results/{rid}")
 def get_result(rid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     r = db.get(AnalysisRun, rid)
-    if r is None or (r.user_id != user.id and not user.is_demo):
+    if r is None or (r.user_id != user.id):
         raise HTTPException(404, "Result not found")
     return {"id": r.id, "module": r.module, "title": r.title, "result": r.result_json,
             "request": r.request_json, "created_at": str(r.created_at)}
@@ -111,7 +111,7 @@ def get_result(rid: int, db: Session = Depends(get_db), user: User = Depends(get
 @router.delete("/results/{rid}")
 def delete_result(rid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     r = db.get(AnalysisRun, rid)
-    if r is None or (r.user_id != user.id and not user.is_demo):
+    if r is None or (r.user_id != user.id):
         raise HTTPException(404, "Result not found")
     db.delete(r)
     db.commit()
@@ -121,7 +121,7 @@ def delete_result(rid: int, db: Session = Depends(get_db), user: User = Depends(
 @router.get("/results/{rid}/export")
 def export_run(rid: int, format: str = "csv", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     r = db.get(AnalysisRun, rid)
-    if r is None or (r.user_id != user.id and not user.is_demo):
+    if r is None or (r.user_id != user.id):
         raise HTTPException(404, "Result not found")
     try:
         content, media, ext = export_result(r.result_json, format)
@@ -137,7 +137,7 @@ def export_run(rid: int, format: str = "csv", db: Session = Depends(get_db), use
 @router.get("/datasets/{dsid}/schema")
 def dataset_schema(dsid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     ds = db.get(Dataset, dsid)
-    if ds is None or (ds.owner_id != user.id and not user.is_demo):
+    if ds is None or (ds.owner_id != user.id):
         raise HTTPException(404, "Dataset not found")
     df = dataio.load_df(ds)
     cols = []
