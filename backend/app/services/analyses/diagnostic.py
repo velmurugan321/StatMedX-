@@ -42,7 +42,7 @@ def _accuracy_rows(tp: int, fp: int, fn: int, tn: int) -> tuple[list[list], str]
         row("PPV", ppv, tp, tp + fp, "TP/(TP+FP)"),
         row("NPV", npv, tn, tn + fn, "TN/(TN+FN)"),
         row("Accuracy", acc, tp + tn, n, "(TP+TN)/N"),
-        ["PLR (+ likelihood ratio)", num(plr, 4), f"[{num(math.exp(lplr - 1.96 * lr_se(sens, spec, tp + fn, tn + fp)), 3)}, {num(math.exp(lplr + 1.96 * lr_se(sens, spec, tp + fn, tn + fp)), 3)}]", "Sens/(1−Spec)"],
+        ["PLR (+ likelihood ratio)", num(plr, 4), f"[{num(math.exp(lplr - 1.96 * lr_se(sens, 1 - spec, tp + fn, tn + fp)), 3)}, {num(math.exp(lplr + 1.96 * lr_se(sens, 1 - spec, tp + fn, tn + fp)), 3)}]", "Sens/(1−Spec)"],
         ["NLR (− likelihood ratio)", num(nlr, 4), f"[{num(math.exp(lnlr - 1.96 * lr_se(1 - sens, spec, tp + fn, tn + fp)), 3)}, {num(math.exp(lnlr + 1.96 * lr_se(1 - sens, spec, tp + fn, tn + fp)), 3)}]", "(1−Sens)/Spec"],
         ["Disease prevalence", num(prev, 4), "—", "(TP+FN)/N"],
     ]

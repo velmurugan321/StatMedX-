@@ -39,7 +39,7 @@ def boxplot(df: pd.DataFrame, var: str, by: str | None = None) -> dict:
 
 def barchart(df: pd.DataFrame, var: str, by: str | None = None, stat: str = "count") -> dict:
     if by:
-        g = df.groupby(by.astype("string") if hasattr(df[by], "astype") else by)[var]
+        g = df.groupby(by)[var]
         if stat == "mean":
             counts = g.mean().dropna().to_dict()
             blocks = [figure(f"Mean {var} by {by}", B.bar_spec(counts, title=f"Mean of {var} by {by}", ylabel="Mean"))]

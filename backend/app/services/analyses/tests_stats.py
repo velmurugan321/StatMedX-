@@ -69,14 +69,16 @@ def ttest_two(df: pd.DataFrame, var: str, group: str, welch: bool = True, equalv
     lo, hi = diff - tcrit * se, diff + tcrit * se
     u, pu = stats.mannwhitneyu(g1, g2, alternative="two-sided")
     rows = [
-        [str(levels[0]), len(g1), num(g1.mean()), num(g1.std(ddof=1)), num(g1.mean(), None), ""],
-        [str(levels[1]), len(g2), num(g2.mean()), num(g2.std(ddof=1)), num(g2.mean(), None), ""],
+        [str(levels[0]), len(g1), num(g1.mean()), num(g1.std(ddof=1)),
+         num(g1.std(ddof=1) / np.sqrt(len(g1))), ""],
+        [str(levels[1]), len(g2), num(g2.mean()), num(g2.std(ddof=1)),
+         num(g2.std(ddof=1) / np.sqrt(len(g2))), ""],
         ["combined", len(g1) + len(g2), num(d[var].mean()), num(d[var].std(ddof=1)), "", ""],
         ["diff", "", num(diff), num(se), f"t = {num(t)}", pval(p)],
     ]
     blocks = [
         table(f"Two-sample t-test: {var} by {group} ({'Welch' if use_welch else 'pooled'}, df={dof:.1f})",
-              ["Group", "N", "Mean", "SD", "Mean", "p"], rows,
+              ["Group", "N", "Mean", "SD", "SE", "p"], rows,
               note=f"Diff = {num(diff)}, 95% CI [{num(lo)}, {num(hi)}], Cohen's d = {num(dcoh, 2)}"),
         table("Normality & variance checks", ["Test", "Result"], [
             ["Levene equal-variance test", f"F-check p = {pval(lev[1])} ({'equal variances OK' if lev[1] > .05 else 'unequal — Welch recommended'})"],
