@@ -22,6 +22,7 @@ Supported (subset, growing):
 """
 from __future__ import annotations
 
+import re
 import shlex
 
 import numpy as np
@@ -155,8 +156,19 @@ def execute(dataset: Dataset, df: pd.DataFrame, cmdline: str) -> tuple[dict, pd.
             lhs, rhs = args.split("=", 1)
             name = lhs.strip()
             expr = rhs.strip()
-            res = df.eval(expr) if "if" not in expr else None
-            df[name] = res
+            # Split an optional condition on the WORD "if" (word boundary — a
+            # plain substring check false-positives on names like diff_score).
+            m = re.search(r"\bif\b", expr)
+            if m:
+                main_expr = expr[: m.start()].strip()
+                cond = expr[m.end():].strip()
+                mask = df.eval(cond).fillna(False)
+                values = df.eval(main_expr)
+                if pd.api.types.is_scalar(values):
+                    values = pd.Series(values, index=df.index)
+                df[name] = np.where(mask, values, np.nan)
+            else:
+                df[name] = df.eval(expr)
             mutated = True
             return R([{"type": "text", "content": f"Variable <b>{name}</b> created "
                                                 f"({int(df[name].notna().sum())} non-missing)."}]), df, True, ""

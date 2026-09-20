@@ -74,3 +74,36 @@ def test_ttest_two_single_mean_column_with_se():
     row_a, row_b = t["rows"][0], t["rows"][1]
     assert abs(float(str(row_a[4]).replace(",", "")) - a.std(ddof=1) / np.sqrt(40)) < 5e-3
     assert abs(float(str(row_b[4]).replace(",", "")) - b.std(ddof=1) / np.sqrt(40)) < 5e-3
+
+
+def test_generate_word_if_not_substring():
+    """BUG 4: 'generate' used a plain substring check for 'if', so variable
+    names containing 'if' (diff_score, gift_amount, tariff) silently produced
+    an all-None column."""
+    from app.models import Dataset
+    from app.services import command_parser
+
+    df = pd.DataFrame({"chol": [200.0, 240.0, 180.0, 260.0],
+                       "age": [70.0, 40.0, 65.0, 30.0]})
+    ds = Dataset(id=1, owner_id=1, name="t", meta={})
+
+    # names containing "if" must compute normally
+    res, df2, mut, _ = command_parser.execute(ds, df.copy(), "generate diff_score = chol / 100")
+    assert mut
+    assert df2["diff_score"].tolist() == [2.0, 2.4, 1.8, 2.6]
+
+    res, df2, mut, _ = command_parser.execute(ds, df.copy(), "generate tariff = age + 5")
+    assert mut and df2["tariff"].tolist() == [75.0, 45.0, 70.0, 35.0]
+
+    # the actual failure mode: RHS *expression* references a variable containing "if"
+    dfg = df.rename(columns={"chol": "gift_amount"})
+    res, df4, mut, _ = command_parser.execute(ds, dfg.copy(), "generate bonus = gift_amount * 2")
+    assert mut
+    assert df4["bonus"].tolist() == [400.0, 480.0, 360.0, 520.0]  # old code: all-None
+
+    # true conditional generate still works (Stata semantics: value where cond, NaN elsewhere)
+    res, df3, mut, _ = command_parser.execute(ds, df.copy(), "generate senior = 1 if age > 60")
+    assert mut
+    assert df3["senior"].dropna().tolist() == [1.0, 1.0]
+    assert int(df3["senior"].notna().sum()) == 2
+    assert df3["senior"].isna().tolist() == [False, True, False, True]
