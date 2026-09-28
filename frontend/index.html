@@ -3,17 +3,35 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f172a" />
     <title>StatMedX — Medical Statistics Platform</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230284c7'/%3E%3Cpath d='M8 22V14M13 22V10M18 22V16M23 22V7' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <style>
+      html,body,#root{margin:0;min-height:100%;background:#0f172a}
+      #startup-status{box-sizing:border-box;min-height:100vh;padding:24px;color:#f8fafc;font:16px system-ui,sans-serif}
+      #startup-status strong{display:block;margin-bottom:8px;font-size:22px}
+      #startup-error{margin-top:12px;color:#fca5a5;white-space:pre-wrap;overflow-wrap:anywhere}
+    </style>
+    <script>
+      (function(){
+        function show(message){
+          var root=document.getElementById("root");
+          if(!root)return;
+          var box=document.getElementById("startup-status");
+          if(!box){box=document.createElement("div");box.id="startup-status";root.replaceChildren(box);}
+          box.innerHTML="<strong>StatMedX startup error</strong><div id='startup-error'></div><p>Please share this error message with support.</p>";
+          box.querySelector("#startup-error").textContent=String(message||"Unknown startup error");
+        }
+        window.addEventListener("error",function(e){show(e.message||"JavaScript loading error");});
+        window.addEventListener("unhandledrejection",function(e){var r=e.reason;show(r&&r.stack||r&&r.message||r||"Unhandled promise rejection");});
+        document.addEventListener("DOMContentLoaded",function(){
+          var root=document.getElementById("root");
+          if(root&&!root.hasChildNodes()){var d=document.createElement("div");d.id="startup-status";d.innerHTML="<strong>Starting StatMedX…</strong><div>Loading the offline workspace.</div>";root.appendChild(d);}
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="./src/main.tsx"></script>
   </body>
 </html>
