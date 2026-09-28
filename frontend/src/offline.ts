@@ -65,8 +65,7 @@ export async function parseExcelFile(file: File, name?: string): Promise<Offline
 }
 
 export function parseDelimited(text: string, name: string, sep?: string): OfflineDataset {
-  const lines = text.replace(/^\uFEFF/, "").split(/\r?
-/).filter(x => x.trim() !== "");
+  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter(x => x.trim() !== "");
   if (!lines.length) throw new Error("The file is empty.");
   const delimiter = sep || (lines[0].includes("\t") ? "\t" : lines[0].includes(",") ? "," : /\s+/.test(lines[0]) ? " " : ",");
   const parse = (line: string) => {
