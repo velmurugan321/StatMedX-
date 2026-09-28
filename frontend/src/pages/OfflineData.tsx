@@ -36,6 +36,7 @@ export default function OfflineData() {
   const [datasets, setDatasets] = useState<LocalDataset[]>(readSaved);
   const [active, setActive] = useState<string>(datasets[0]?.id || "");
   const [error, setError] = useState("");
+  const [frequencyVar, setFrequencyVar] = useState("");
   const current = datasets.find((d) => d.id === active);
   const save = (next: LocalDataset[]) => {
     try {
@@ -85,6 +86,20 @@ export default function OfflineData() {
     const isNumeric = numeric.n > 0 && categorical.levels.length > 0 && numeric.n + numeric.missing === values.length;
     return { name, isNumeric, numeric, categorical };
   }) : [], [current]);
+  const frequency = useMemo(() => {
+    if (!current || !frequencyVar) return [];
+    const counts = new Map<string, number>();
+    let missing = 0;
+    for (const row of current.rows) {
+      const raw = row[frequencyVar];
+      if (raw == null || String(raw).trim() === "") { missing++; continue; }
+      const key = String(raw).trim();
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    const n = current.rows.length - missing;
+    return Array.from(counts, ([value, count]) => ({ value, count, percent: n ? count * 100 / n : 0 }))
+      .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+  }, [current, frequencyVar]);
   const exportCsv = () => {
     if (!current) return;
     const quote = (v: unknown) => {
@@ -104,6 +119,17 @@ export default function OfflineData() {
     {error && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
     {current ? <><div className="text-sm font-semibold text-slate-700">{current.name}: {current.rows.length.toLocaleString()} rows × {current.columns.length} variables <span className="font-normal text-slate-400">· saved on this device</span></div>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50"><tr><th className="p-3">Variable</th><th className="p-3">Type</th><th className="p-3">N</th><th className="p-3">Missing</th><th className="p-3">Mean / Levels</th><th className="p-3">SD / %</th><th className="p-3">Median / Min–Max</th></tr></thead><tbody>{summaries.map((s) => <tr key={s.name} className="border-t border-slate-100"><td className="p-3 font-medium">{s.name}</td><td className="p-3">{s.isNumeric ? "Numeric" : "Categorical"}</td><td className="p-3">{s.isNumeric ? s.numeric.n : s.categorical.n}</td><td className="p-3">{s.isNumeric ? s.numeric.missing : s.categorical.missing}</td><td className="p-3">{s.isNumeric ? s.numeric.mean?.toFixed(2) : s.categorical.levels.slice(0, 3).map((l) => l.value).join(", ")}</td><td className="p-3">{s.isNumeric ? s.numeric.sd?.toFixed(2) ?? "—" : s.categorical.levels.slice(0, 2).map((l) => `${l.percent.toFixed(1)}%`).join(", ")}</td><td className="p-3">{s.isNumeric ? `${s.numeric.median?.toFixed(2)} / ${s.numeric.min}–${s.numeric.max}` : s.categorical.levels.slice(0, 2).map((l) => `${l.value}: ${l.n}`).join("; ")}</td></tr>)}</tbody></table></div>
+      <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+        <div><h2 className="text-sm font-bold text-slate-800">Offline frequency table</h2><p className="text-xs text-slate-500">Select a variable to calculate counts and percentages locally.</p></div>
+        <select aria-label="Frequency variable" className="w-full max-w-sm rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={frequencyVar} onChange={(e) => setFrequencyVar(e.target.value)}>
+          <option value="">Select variable</option>{current.columns.map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+        {frequencyVar && <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50"><tr><th className="p-2">Value</th><th className="p-2">Frequency</th><th className="p-2">Percent</th></tr></thead><tbody>
+          {frequency.map((item) => <tr key={item.value} className="border-t border-slate-100"><td className="p-2">{item.value}</td><td className="p-2">{item.count}</td><td className="p-2">{item.percent.toFixed(1)}%</td></tr>)}
+          <tr className="border-t border-slate-200 font-semibold"><td className="p-2">Missing</td><td className="p-2">{current.rows.length - frequency.reduce((sum, item) => sum + item.count, 0)}</td><td className="p-2">—</td></tr>
+          <tr className="border-t border-slate-200 font-semibold"><td className="p-2">Valid total</td><td className="p-2">{frequency.reduce((sum, item) => sum + item.count, 0)}</td><td className="p-2">100%</td></tr>
+        </tbody></table></div>}
+      </section>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="min-w-full text-left text-xs"><thead className="bg-slate-50"><tr>{current.columns.slice(0, 8).map((c) => <th className="p-2" key={c}>{c}</th>)}</tr></thead><tbody>{current.rows.slice(0, 20).map((r, i) => <tr key={i} className="border-t border-slate-100">{current.columns.slice(0, 8).map((c) => <td className="p-2" key={c}>{r[c] == null ? "" : String(r[c])}</td>)}</tr>)}</tbody></table></div><p className="text-xs text-slate-400">Preview shows up to 20 rows and 8 columns. Stored in this browser/app's local storage; clearing app data may erase it.</p>
     </> : <div className="rounded-xl border-2 border-dashed border-slate-300 p-10 text-center text-sm text-slate-400">{datasets.length ? "Select a local dataset to view its summary." : "No local datasets yet. Import a CSV, TXT or TSV file to begin."}</div>}
   </div>;
