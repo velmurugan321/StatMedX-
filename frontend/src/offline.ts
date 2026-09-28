@@ -49,8 +49,18 @@ export async function parseStatFile(file: File, name?: string): Promise<OfflineD
   throw new Error("Unsupported statistical file format.");
 }
 
-export async function parseExcelFile(file: File, name?: string): Promise<OfflineDataset> {
- const buf=await file.arrayBuffer();
+export function readFileWithProgress(file: File, onProgress?: (percent:number)=>void): Promise<ArrayBuffer> {
+ return new Promise((resolve,reject)=>{
+  const reader=new FileReader();
+  reader.onprogress=e=>{ if(e.lengthComputable) onProgress?.(Math.round((e.loaded/e.total)*100)); };
+  reader.onload=()=>{ onProgress?.(100); resolve(reader.result as ArrayBuffer); };
+  reader.onerror=()=>reject(reader.error||new Error("Unable to read file."));
+  reader.readAsArrayBuffer(file);
+ });
+}
+
+export async function parseExcelFile(file: File, name?: string, onProgress?: (percent:number)=>void): Promise<OfflineDataset> {
+ const buf=await readFileWithProgress(file,onProgress);
  const wb=XLSX.read(buf,{type:"array",cellDates:false});
  const ws=wb.Sheets[wb.SheetNames[0]];
  const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
