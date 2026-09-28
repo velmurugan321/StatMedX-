@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api";
 import { getOfflineDataset, offlineSchema, runOffline } from "../offline";
+import * as XLSX from "xlsx";
 import { useApp } from "../state";
 import { MODULES } from "../modules";
 import ResultsView from "../components/ResultsView";
@@ -142,6 +143,55 @@ export default function Analysis() {
     return <input className={inputCls} value={values[f.key] ?? ""} onChange={(e) => setVal(f.key, e.target.value)} />;
   };
 
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.style.display = "none";
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1000);
+  };
+
+  const resultBlocks = Array.isArray(result?.result?.blocks) ? result.result.blocks : [];
+  const exportRows = () => {
+    const rows: string[][] = [];
+    for (const b of resultBlocks) {
+      if (b?.type === "table" && Array.isArray(b.columns) && Array.isArray(b.rows)) {
+        rows.push([String(b.name || "Results")]);
+        rows.push(b.columns.map((c: any) => String(c?.label ?? c?.key ?? "")));
+        for (const row of b.rows) rows.push(Array.isArray(row) ? row.map((v: any) => v == null ? "" : String(v)) : []);
+        rows.push([]);
+      } else if (b?.type === "text" && b.content) {
+        rows.push([String(b.content).replace(/<[^>]+>/g, "")]);
+        rows.push([]);
+      }
+    }
+    return rows;
+  };
+
+  const downloadCSV = () => {
+    if (!result) return;
+    const esc = (v: string) => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+    const csv = exportRows().map(row => row.map(esc).join(",")).join("\r\n");
+    downloadBlob(new Blob(["\uFEFF", csv], {type: "text/csv;charset=utf-8"}), `${mod.id}-results.csv`);
+  };
+
+  const downloadExcel = () => {
+    if (!result) return;
+    const wb = XLSX.utils.book_new();
+    const rows = exportRows();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows.length ? rows : [["No table results"]]), "Results");
+    const bytes = XLSX.write(wb, {bookType: "xlsx", type: "array"});
+    downloadBlob(new Blob([bytes], {type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}), `${mod.id}-results.xlsx`);
+  };
+
+  const printResult = () => {
+    if (!result) return;
+    const w = window.open("", "_blank");
+    if (!w) { setErr("Please allow pop-ups to print/download the result."); return; }
+    w.document.write(`<!doctype html><html><head><title>${mod.title} - StatMedX</title><style>body{font-family:Arial,sans-serif;padding:24px}table{border-collapse:collapse;width:100%;margin:12px 0}th,td{border:1px solid #ccc;padding:6px;text-align:left}h1{font-size:20px}</style></head><body><h1>${mod.title}</h1>${document.querySelector("[data-result-print]")?.innerHTML || ""}</body></html>`);
+    w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
+  };
+
   const ready = mod.fields.every((f) => {
     if (f.optional) return true;
     const v = values[f.key] ?? defaults[f.key];
@@ -196,16 +246,13 @@ export default function Analysis() {
           )}
           {result && (
             <div className="space-y-4">
-              {result.id && (              <div className="flex flex-wrap gap-1.5">
-                <a className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50"
-                   href={`/api/results/${result.id}/export?format=excel`} target="_blank">⬇ Excel</a>
-                <a className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50"
-                   href={`/api/results/${result.id}/export?format=csv`} target="_blank">⬇ CSV</a>
-                <a className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50"
-                   href={`/api/results/${result.id}/export?format=docx`} target="_blank">⬇ Word</a>
-                <a className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50"
-                   href={`/api/results/${result.id}/export?format=pdf`} target="_blank">🖨 PDF / Print</a>
-              </div>              )}              <ResultsView result={result.result} />
+              <div className="flex flex-wrap gap-1.5">
+                <Btn variant="ghost" onClick={downloadExcel}>⬇ Excel</Btn>
+                <Btn variant="ghost" onClick={downloadCSV}>⬇ CSV</Btn>
+                <Btn variant="ghost" onClick={printResult}>🖨 PDF / Print</Btn>
+                {result.id && <span className="self-center text-[11px] text-slate-400">Server result #${result.id}</span>}
+              </div>
+              <div data-result-print><ResultsView result={result.result} /></div>
             </div>
           )}
         </div>
