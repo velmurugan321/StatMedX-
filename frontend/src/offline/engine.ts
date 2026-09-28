@@ -233,3 +233,48 @@ export function fisherExact2x2(table: number[][]): FisherExactResult {
   }
   return { oddsRatio, pValue: Math.min(1, p) };
 }
+
+export interface TwoGroupNumericResult {
+  group1N: number; group2N: number;
+  group1Mean: number | null; group2Mean: number | null;
+  group1SD: number | null; group2SD: number | null;
+  meanDifference: number | null;
+  tStatistic: number | null;
+  degreesFreedom: number | null;
+  pValue: number | null;
+}
+
+/** Welch independent-samples t-test for two groups. */
+export function welchTTest(groupValues: unknown[], outcomeValues: unknown[], group1: string, group2: string): TwoGroupNumericResult {
+  const x1: number[] = [], x2: number[] = [];
+  const n = Math.min(groupValues.length, outcomeValues.length);
+  for (let i = 0; i < n; i++) {
+    const g = groupValues[i], v = outcomeValues[i];
+    if (isMissing(g) || isMissing(v)) continue;
+    const value = typeof v === "number" ? v : Number(String(v).trim());
+    if (!Number.isFinite(value)) continue;
+    const label = String(g).trim();
+    if (label === group1) x1.push(value);
+    else if (label === group2) x2.push(value);
+  }
+  const stats = (x: number[]) => {
+    const m = x.length ? x.reduce((s, v) => s + v, 0) / x.length : null;
+    const variance = x.length > 1 && m !== null ? x.reduce((s, v) => s + (v - m) ** 2, 0) / (x.length - 1) : null;
+    return { n: x.length, mean: m, sd: variance === null ? null : Math.sqrt(variance) };
+  };
+  const s1 = stats(x1), s2 = stats(x2);
+  const meanDifference = s1.mean !== null && s2.mean !== null ? s1.mean - s2.mean : null;
+  if (s1.n < 2 || s2.n < 2 || s1.mean === null || s2.mean === null || s1.sd === null || s2.sd === null) {
+    return { group1N: s1.n, group2N: s2.n, group1Mean: s1.mean, group2Mean: s2.mean, group1SD: s1.sd, group2SD: s2.sd, meanDifference, tStatistic: null, degreesFreedom: null, pValue: null };
+  }
+  const a = s1.sd ** 2 / s1.n, b = s2.sd ** 2 / s2.n;
+  const se = Math.sqrt(a + b);
+  const t = meanDifference! / se;
+  const df = (a + b) ** 2 / (a ** 2 / (s1.n - 1) + b ** 2 / (s2.n - 1));
+  const tTail = (absT: number): number => {
+    const z = df / (df + absT * absT);
+    return 0.5 * gammaQ(df / 2, df * z / 2);
+  };
+  const pValue = Math.max(0, Math.min(1, 2 * tTail(Math.abs(t))));
+  return { group1N: s1.n, group2N: s2.n, group1Mean: s1.mean, group2Mean: s2.mean, group1SD: s1.sd, group2SD: s2.sd, meanDifference, tStatistic: t, degreesFreedom: df, pValue };
+}
