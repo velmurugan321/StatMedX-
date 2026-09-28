@@ -29,8 +29,13 @@ export function AppProvider({children}:{children:React.ReactNode}){
   }
  };
  const loginDemo=async()=>{
-  const u=await api<any>("/api/auth/demo",{method:"POST"});
-  setAuth(u.token,u);setUser(u);await refreshDatasets();
+  try {
+   const u=await api<any>("/api/auth/demo",{method:"POST"});
+   setAuth(u.token,u);setUser(u);await refreshDatasets();
+  } catch {
+   setUser({id:0,name:"Offline User",offline:true});
+   await refreshDatasets();
+  }
  };
  const logout=()=>{clearAuth();setUser(null);setDatasets([]);setActiveDataset(null);};
  const bumpData=()=>setDataVersion(v=>v+1);
