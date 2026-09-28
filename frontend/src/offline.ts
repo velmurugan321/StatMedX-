@@ -1,3 +1,4 @@
+import { readDta, readSav } from "@irbisadm/statfmt";
 import * as XLSX from "xlsx";
 /* StatMedX offline runtime: CSV/local datasets + browser-side core statistics.
    No network, server, or external runtime is required for these modules. */
@@ -40,6 +41,16 @@ export async function listOfflineDatasets(): Promise<OfflineDataset[]> {
     r.onsuccess = () => resolve(r.result || []); r.onerror = () => reject(r.error);
   });
   db.close(); return v;
+}
+
+export async function parseStatFile(file: File, name?: string): Promise<OfflineDataset> {
+ const bytes=new Uint8Array(await file.arrayBuffer());
+ const isDta=/\.dta$/i.test(file.name);
+ const parsed:any=isDta ? readDta(bytes) : readSav(bytes);
+ const vars=(parsed.variables||[]).map((v:any)=>String(v.name||v.label||"")).filter(Boolean);
+ const rawRows=typeof parsed.toObjects==="function" ? parsed.toObjects() : (parsed.rows||[]);
+ const data=rawRows.map((obj:any)=>vars.map((v:string)=>obj[v] ?? ""));
+ return {id:-Date.now(),name:name||file.name.replace(/\.[^.]+$/,""),columns:vars,rows:data,source_format:isDta?"dta":"sav",description:`Offline ${isDta?"Stata":"SPSS"} import`};
 }
 
 export async function parseExcelFile(file: File, name?: string): Promise<OfflineDataset> {
