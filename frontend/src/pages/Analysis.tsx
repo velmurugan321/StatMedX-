@@ -196,7 +196,7 @@ export default function Analysis() {
           )}
           {result && (
             <div className="space-y-4">
-              {result.id && (\n              <div className="flex flex-wrap gap-1.5">
+              {result.id && (              <div className="flex flex-wrap gap-1.5">
                 <a className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50"
                    href={`/api/results/${result.id}/export?format=excel`} target="_blank">⬇ Excel</a>
                 <a className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50"
@@ -205,7 +205,7 @@ export default function Analysis() {
                    href={`/api/results/${result.id}/export?format=docx`} target="_blank">⬇ Word</a>
                 <a className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50"
                    href={`/api/results/${result.id}/export?format=pdf`} target="_blank">🖨 PDF / Print</a>
-              </div>              )}\n              <ResultsView result={result.result} />
+              </div>              )}              <ResultsView result={result.result} />
             </div>
           )}
         </div>
