@@ -65,7 +65,8 @@ export async function parseExcelFile(file: File, name?: string): Promise<Offline
 }
 
 export function parseDelimited(text: string, name: string, sep?: string): OfflineDataset {
-  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter(x => x.trim() !== "");
+  const lines = text.replace(/^\uFEFF/, "").split(/\r?
+/).filter(x => x.trim() !== "");
   if (!lines.length) throw new Error("The file is empty.");
   const delimiter = sep || (lines[0].includes("\t") ? "\t" : lines[0].includes(",") ? "," : /\s+/.test(lines[0]) ? " " : ",");
   const parse = (line: string) => {
@@ -153,7 +154,18 @@ export function runOffline(ds:OfflineDataset,module:string,p:any):any{
  if(module==="ttest_paired"){const[a,b]=pairs(ds,p.v1,p.v2),d=a.map((x,i)=>x-b[i]),t=mean(d)/(sd(d)/Math.sqrt(d.length));return result("Paired t test",[[d.length,mean(d),sd(d),t,p2z(t)]],["N","Mean difference","SD difference","t","Approx. p"]);}
  if(module==="mannwhitney"||module==="wilcoxon"){const[a,b]=module==="wilcoxon"?pairs(ds,p.v1,p.v2):(()=>{const j=ds.columns.indexOf(p.group),iy=ds.columns.indexOf(p.variable),g=[...new Set(ds.rows.map(r=>String(r[j]??"")))];return [ds.rows.filter(r=>String(r[j]??"")===g[0]).map(r=>num(r[iy])).filter(Number.isFinite),ds.rows.filter(r=>String(r[j]??"")===g[1]).map(r=>num(r[iy])).filter(Number.isFinite)]})();const d=module==="wilcoxon"?a.map((x,i)=>x-b[i]).filter(x=>x!==0):a.concat(b);return result(module==="wilcoxon"?"Wilcoxon signed-rank test":"Mann–Whitney test",[[a.length,b.length,mean(d),p2z(mean(d)/(sd(d)/Math.sqrt(d.length))) ]],["N1","N2","Statistic/mean difference","Approx. p"]);}
  if(module==="anova"||module==="kruskal"){const y=ds.columns.indexOf(p.variable),g=ds.columns.indexOf(p.group),m=new Map<string,number[]>();ds.rows.forEach(r=>{const v=num(r[y]),k=String(r[g]??"");if(Number.isFinite(v)){if(!m.has(k))m.set(k,[]);m.get(k)!.push(v);}});const all=[...m.values()].flat(),gm=mean(all);let ssb=0;for(const a of m.values())ssb+=a.length*(mean(a)-gm)**2;const df=Math.max(1,m.size-1),msb=ssb/df;let ssw=0;for(const a of m.values())ssw+=a.reduce((s,x)=>s+(x-mean(a))**2,0);const msw=ssw/Math.max(1,all.length-m.size),F=msb/msw;return result(module==="anova"?"One-way ANOVA":"Kruskal–Wallis",[[all.length,m.size,F,p2z(Math.sqrt(Math.max(F,0)))]],["N","Groups","Statistic","Approx. p"]);}
- if(module==="reg_linear"||module==="reg_logistic"||module==="reg_poisson"||module==="reg_negbin"||module==="reg_multinomial"){return regressionOffline(ds,module,p);}\n if(module==="cox"){return coxOffline(ds,p);}\n if(module==="gee"){return geeOffline(ds,p);}\n if(module==="mixed"){return mixedOffline(ds,p);}\n if(module==="survey_reg"){return weightedOLS(ds,p.y,p.xs||[],p.weight);}\n if(module==="meta"){return metaOffline(ds,p);}\n if(module==="repeated"){return repeatedOffline(ds,p);}\n if(module==="survey_prop"){return surveyPropOffline(ds,p);}\n if(module==="km"){return kmOffline(ds,p.time,p.event,p.group);}\n if(module==="survey_mean"){return surveyMeanOffline(ds,p);}\n if(module==="propensity"){return propensityOffline(ds,p);}\n if(module==="diag_2x2"){const tp=+p.tp,fp=+p.fp,fn=+p.fn,tn=+p.tn,sens=tp/(tp+fn),spec=tn/(tn+fp),ppv=tp/(tp+fp),npv=tn/(tn+fn),acc=(tp+tn)/(tp+fp+fn+tn);return result("2×2 diagnostic accuracy",[[sens*100,spec*100,ppv*100,npv*100,acc*100]],["Sensitivity %","Specificity %","PPV %","NPV %","Accuracy %"]);}
+ if(module==="reg_linear"||module==="reg_logistic"||module==="reg_poisson"||module==="reg_negbin"||module==="reg_multinomial"){return regressionOffline(ds,module,p);}
+ if(module==="cox"){return coxOffline(ds,p);}
+ if(module==="gee"){return geeOffline(ds,p);}
+ if(module==="mixed"){return mixedOffline(ds,p);}
+ if(module==="survey_reg"){return weightedOLS(ds,p.y,p.xs||[],p.weight);}
+ if(module==="meta"){return metaOffline(ds,p);}
+ if(module==="repeated"){return repeatedOffline(ds,p);}
+ if(module==="survey_prop"){return surveyPropOffline(ds,p);}
+ if(module==="km"){return kmOffline(ds,p.time,p.event,p.group);}
+ if(module==="survey_mean"){return surveyMeanOffline(ds,p);}
+ if(module==="propensity"){return propensityOffline(ds,p);}
+ if(module==="diag_2x2"){const tp=+p.tp,fp=+p.fp,fn=+p.fn,tn=+p.tn,sens=tp/(tp+fn),spec=tn/(tn+fp),ppv=tp/(tp+fp),npv=tn/(tn+fn),acc=(tp+tn)/(tp+fp+fn+tn);return result("2×2 diagnostic accuracy",[[sens*100,spec*100,ppv*100,npv*100,acc*100]],["Sensitivity %","Specificity %","PPV %","NPV %","Accuracy %"]);}
  if(module==="diag_vars"){const a=vals(ds,p.test_var),b=vals(ds,p.gold_var);return result("Diagnostic variables",[[a.length,b.length]],["Test N","Reference N"]);}
  if(module==="roc"){const[y,s]=pairs(ds,p.y,p.score_vars?.[0]);const order=[...s.map((v,i)=>[v,y[i]] as [number,number])].sort((a,b)=>b[0]-a[0]);let tp=0,fp=0,pos=y.filter(v=>v===1).length,neg=y.length-pos;const pts=[[0,0]];for(const[,yy]of order){if(yy===1)tp++;else fp++;pts.push([fp/Math.max(1,neg),tp/Math.max(1,pos)]);}let auc=0;for(let i=1;i<pts.length;i++)auc+=(pts[i][0]-pts[i-1][0])*(pts[i][1]+pts[i-1][1])/2;return result("ROC analysis",[[y.length,auc]],["N","AUC"]);}
  if(module==="graph_bar"||module==="graph_histogram"||module==="graph_box"||module==="graph_scatter"){return {title:"Offline graph",blocks:[{type:"text",content:`Graph module "${module}" is available offline; use the result data with the chart view.`}]};}
