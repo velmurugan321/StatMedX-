@@ -2,9 +2,10 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-// Dev server proxies /api to the FastAPI backend so the browser
-// only ever talks to this origin (works behind the preview proxy).
+// Dev server proxies /api to the FastAPI backend.
+// Production/Android builds use VITE_API_URL for the API base.
 export default defineConfig({
+  base: "./",
   plugins: [react(), tailwindcss()],
   server: {
     host: "0.0.0.0",
