@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { parseDelimited, saveOfflineDataset } from "../offline";
 import { useApp } from "../state";
 import { Btn, ErrorNote, inputCls } from "../components/ui";
 
@@ -21,7 +22,13 @@ export default function Dashboard() {
       const fd = new FormData();
       fd.append("file", f);
       fd.append("name", f.name.replace(/\.[^.]+$/, ""));
-      await api("/api/datasets/upload", { method: "POST", body: fd });
+      try {
+        await api("/api/datasets/upload", { method: "POST", body: fd });
+      } catch {
+        if (!/\.(csv|txt|tsv)$/i.test(f.name)) throw new Error("Offline import currently supports CSV, TXT and TSV. Reconnect for Excel/Stata/SPSS import.");
+        const text = await f.text();
+        await saveOfflineDataset(parseDelimited(text, f.name.replace(/\.[^.]+$/, "")));
+      }
       await refreshDatasets();
     } catch (e: any) {
       setErr(e.message);
@@ -34,10 +41,14 @@ export default function Dashboard() {
     setErr(null);
     setBusy(true);
     try {
-      await api("/api/datasets/paste", {
-        method: "POST",
-        body: JSON.stringify({ text: pasteText, name: pasteName, sep: "auto" }),
-      });
+      try {
+        await api("/api/datasets/paste", {
+          method: "POST",
+          body: JSON.stringify({ text: pasteText, name: pasteName, sep: "auto" }),
+        });
+      } catch {
+        await saveOfflineDataset(parseDelimited(pasteText, pasteName));
+      }
       setPasteOpen(false);
       setPasteText("");
       await refreshDatasets();
@@ -71,7 +82,7 @@ export default function Dashboard() {
                  onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
           <Btn variant="soft" onClick={() => setPasteOpen(true)}>📋 Paste data</Btn>
           <Btn onClick={() => fileRef.current?.click()} disabled={busy}>
-            {busy ? "Uploading…" : "⬆ Import dataset"}
+            {busy ? "Importing…" : "⬆ Import dataset"}
           </Btn>
         </div>
       </div>
