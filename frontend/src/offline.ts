@@ -1,4 +1,4 @@
-import { readDta, readSav } from "@irbisadm/statfmt";
+import { readSav } from "datareader-spss";
 import * as XLSX from "xlsx";
 /* StatMedX offline runtime: CSV/local datasets + browser-side core statistics.
    No network, server, or external runtime is required for these modules. */
@@ -44,13 +44,14 @@ export async function listOfflineDatasets(): Promise<OfflineDataset[]> {
 }
 
 export async function parseStatFile(file: File, name?: string): Promise<OfflineDataset> {
- const bytes=new Uint8Array(await file.arrayBuffer());
  const isDta=/\.dta$/i.test(file.name);
- const parsed:any=isDta ? readDta(bytes) : readSav(bytes);
- const vars=(parsed.variables||[]).map((v:any)=>String(v.name||v.label||"")).filter(Boolean);
- const rawRows=typeof parsed.toObjects==="function" ? parsed.toObjects() : (parsed.rows||[]);
- const data=rawRows.map((obj:any)=>vars.map((v:string)=>obj[v] ?? ""));
- return {id:-Date.now(),name:name||file.name.replace(/\.[^.]+$/,""),columns:vars,rows:data,source_format:isDta?"dta":"sav",description:`Offline ${isDta?"Stata":"SPSS"} import`};
+ if (isDta) throw new Error("Offline Stata (.dta) import is temporarily disabled in this browser build. Use CSV/Excel or reconnect to use the server importer.");
+ const parsed:any=await readSav(await file.arrayBuffer());
+ const sheet=parsed.sheets?.[0];
+ if(!sheet) throw new Error("SPSS file contains no readable sheet.");
+ const vars=(sheet.variables||[]).map((v:any)=>String(v.name||"")).filter(Boolean);
+ const data=(sheet.rows||[]).map((row:any[])=>vars.map((_:string,i:number)=>row[i] ?? ""));
+ return {id:-Date.now(),name:name||file.name.replace(/\.[^.]+$/,""),n_rows:data.length,n_cols:vars.length,columns:vars,rows:data,source_format:"sav",description:"Offline SPSS import"};
 }
 
 export async function parseExcelFile(file: File, name?: string): Promise<OfflineDataset> {
