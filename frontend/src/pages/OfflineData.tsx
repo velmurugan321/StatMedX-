@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { crosstabChiSquare, summarizeCategorical, summarizeNumeric, type DataRow } from "../offline/engine";
+import { crosstabChiSquare, fisherExact2x2, summarizeCategorical, summarizeNumeric, type DataRow } from "../offline/engine";
 
 type LocalDataset = { id: string; name: string; columns: string[]; rows: DataRow[]; savedAt: string };
 const STORAGE_KEY = "statmedx_offline_datasets_v1";
@@ -145,7 +145,15 @@ export default function OfflineData() {
         {cross && <><div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50"><tr><th className="p-2">{rowVar} \ {columnVar}</th>{cross.columnLevels.map((level) => <th className="p-2" key={level}>{level}</th>)}<th className="p-2">Total</th></tr></thead><tbody>
           {cross.rowLevels.map((level, i) => <tr className="border-t border-slate-100" key={level}><th className="p-2 font-medium">{level}</th>{cross.cells[i].map((n, j) => <td className="p-2" key={j}>{n}</td>)}<td className="p-2 font-semibold">{cross.rowTotals[i]}</td></tr>)}
           <tr className="border-t border-slate-200 font-semibold"><th className="p-2">Total</th>{cross.columnTotals.map((n, i) => <td className="p-2" key={i}>{n}</td>)}<td className="p-2">{cross.total}</td></tr>
-        </tbody></table></div><div className="flex flex-wrap gap-4 text-sm text-slate-700"><span>χ² = <b>{cross.chiSquare?.toFixed(3) ?? "—"}</b></span><span>df = <b>{cross.degreesFreedom}</b></span><span>p = <b>{cross.pValue == null ? "—" : cross.pValue < 0.001 ? "<0.001" : cross.pValue.toFixed(3)}</b></span><span>Expected cells &lt;5: <b>{cross.expectedBelowFive}</b></span><span>Complete pairs: <b>{cross.total}</b></span></div></>}
+        </tbody></table></div><div className="flex flex-wrap gap-4 text-sm text-slate-700"><span>χ² = <b>{cross.chiSquare?.toFixed(3) ?? "—"}</b></span><span>df = <b>{cross.degreesFreedom}</b></span><span>p = <b>{cross.pValue == null ? "—" : cross.pValue < 0.001 ? "<0.001" : cross.pValue.toFixed(3)}</b></span><span>Expected cells &lt;5: <b>{cross.expectedBelowFive}</b></span><span>Complete pairs: <b>{cross.total}</b></span></div>
+          {cross.rowLevels.length === 2 && cross.columnLevels.length === 2 && (() => {
+            const fisher = fisherExact2x2(cross.cells);
+            return <div className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+              <b>2×2 Fisher exact test:</b> p = {fisher.pValue == null ? "—" : fisher.pValue < 0.001 ? "<0.001" : fisher.pValue.toFixed(3)}
+              {" · "}odds ratio = {fisher.oddsRatio == null ? "—" : fisher.oddsRatio === Infinity ? "∞" : fisher.oddsRatio.toFixed(3)}
+              <div className="mt-1 text-xs text-amber-700">Two-sided exact test for 2×2 tables with small expected counts.</div>
+            </div>;
+          })()} </>}
       </section>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="min-w-full text-left text-xs"><thead className="bg-slate-50"><tr>{current.columns.slice(0, 8).map((c) => <th className="p-2" key={c}>{c}</th>)}</tr></thead><tbody>{current.rows.slice(0, 20).map((r, i) => <tr key={i} className="border-t border-slate-100">{current.columns.slice(0, 8).map((c) => <td className="p-2" key={c}>{r[c] == null ? "" : String(r[c])}</td>)}</tr>)}</tbody></table></div><p className="text-xs text-slate-400">Preview shows up to 20 rows and 8 columns. Stored in this browser/app's local storage; clearing app data may erase it.</p>
     </> : <div className="rounded-xl border-2 border-dashed border-slate-300 p-10 text-center text-sm text-slate-400">{datasets.length ? "Select a local dataset to view its summary." : "No local datasets yet. Import a CSV, TXT or TSV file to begin."}</div>}
