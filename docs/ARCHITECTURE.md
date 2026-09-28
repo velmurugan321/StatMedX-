@@ -86,3 +86,11 @@ Results window (saved runs, filter by dataset), tables + charts rendering, **cop
 
 ## 16. DEPLOYMENT — ⏳
 Planned: Dockerfile + compose (api + web + postgres), error monitoring (Sentry), backups, production security hardening (strict CORS, HTTPS, rate limiting, non-ephemeral secrets).
+
+
+## Offline APK runtime — added 2026-09-28
+- The frontend now has an IndexedDB-backed local dataset store (`frontend/src/offline.ts`).
+- CSV/TXT/TSV files and pasted tables can be imported locally when the API is unavailable.
+- Core descriptive statistics, frequencies, cross-tabs, correlations, t-tests, non-parametric tests, one-way ANOVA/Kruskal-Wallis, 2×2 diagnostic accuracy and ROC calculations can execute inside the Android/WebView without the FastAPI server.
+- Analysis requests first use the local engine for local datasets and fall back to the local engine when the server request fails.
+- The existing FastAPI/pandas/SciPy/statsmodels engine remains the full server-side engine for modules not yet ported to TypeScript.
