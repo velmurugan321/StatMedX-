@@ -40,10 +40,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const loginDemo = async () => {
-    const u = await api<any>("/api/auth/demo", { method: "POST" });
-    setAuth(u.token, u);
-    setUser(u);
-    await refreshDatasets();
+    try {
+      const u = await api<any>("/api/auth/demo", { method: "POST" });
+      setAuth(u.token, u);
+      setUser(u);
+      await refreshDatasets();
+    } catch {
+      // Allow the local offline workspace to open when the API is unreachable.
+      setUser((current) => current || { name: "Offline workspace", email: "offline@local" });
+    }
   };
 
   const logout = () => {
