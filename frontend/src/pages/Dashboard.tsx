@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { parseDelimited, saveOfflineDataset } from "../offline";
+import { parseDelimited, parseExcelFile, saveOfflineDataset } from "../offline";
 import { useApp } from "../state";
 import { Btn, ErrorNote, inputCls } from "../components/ui";
 
@@ -91,7 +91,7 @@ export default function Dashboard() {
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 text-[13px] text-slate-600">
         <span className="font-bold text-slate-800">Supported formats:</span>{" "}
-        CSV · TXT/TSV · Excel (.xlsx/.xls) · Stata (.dta) · SPSS (.sav) — or paste a table straight in.
+        CSV · TXT/TSV · Excel (.xlsx) offline · Stata (.dta) · SPSS (.sav) via server — or paste a table straight in.
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
