@@ -1,4 +1,6 @@
-// Typed API client — all requests go through the Vite proxy (/api → backend).
+// Typed API client. In the web app, relative /api requests are used.
+// In the Android Capacitor app, VITE_API_URL points to the Render backend.
+const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 const TOKEN_KEY = "statmedx_token";
 const USER_KEY = "statmedx_user";
 
@@ -26,12 +28,16 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
   if (!(opts.body instanceof FormData)) headers["Content-Type"] = "application/json";
   const token = getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(path, { ...opts, headers });
+
+  const url = `${API_BASE}${path}`;
+  const res = await fetch(url, { ...opts, headers });
+
   if (res.status === 401) {
     clearAuth();
     window.location.hash = "#/login";
     throw new Error("Session expired — please log in again");
   }
+
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const detail = (data as any)?.detail;
@@ -47,7 +53,6 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
 }
 
 export function downloadUrl(path: string): string {
-  // append token as query for downloads (simplest auth for <a> links)
   const token = getToken() || "";
-  return `${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+  return `${API_BASE}${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
 }
