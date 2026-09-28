@@ -71,6 +71,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4">
           <NavItem to="/" icon="⌂" label="Dashboard" onClick={() => setMobileOpen(false)} />
           <NavItem to="/data" icon="▦" label="Data editor" onClick={() => setMobileOpen(false)} />
+          <NavItem to="/offline-data" icon="⬇" label="Offline data" onClick={() => setMobileOpen(false)} />
           <NavItem to="/console" icon="›_" label="Command console" onClick={() => setMobileOpen(false)} />
           <NavItem to="/dofile" icon="⌨" label="Do-file editor" onClick={() => setMobileOpen(false)} />
           <NavItem to="/results" icon="🗂" label="Results window" onClick={() => setMobileOpen(false)} />
