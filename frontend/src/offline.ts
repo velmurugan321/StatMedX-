@@ -1,3 +1,4 @@
+import * as XLSX from "xlsx";
 /* StatMedX offline runtime: CSV/local datasets + browser-side core statistics.
    No network, server, or external runtime is required for these modules. */
 export type OfflineDataset = {
@@ -39,6 +40,17 @@ export async function listOfflineDatasets(): Promise<OfflineDataset[]> {
     r.onsuccess = () => resolve(r.result || []); r.onerror = () => reject(r.error);
   });
   db.close(); return v;
+}
+
+export async function parseExcelFile(file: File, name?: string): Promise<OfflineDataset> {
+ const buf=await file.arrayBuffer();
+ const wb=XLSX.read(buf,{type:"array",cellDates:false});
+ const ws=wb.Sheets[wb.SheetNames[0]];
+ const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+ if(!rows.length) throw new Error("Excel sheet is empty.");
+ const header=rows[0].map((v:any,i:number)=>String(v??"").trim()||`V${i+1}`);
+ const data=rows.slice(1).filter(r=>r.some((v:any)=>String(v??"").trim()!=="")).map(r=>header.map((_,i)=>r[i]??""));
+ return {id:-Date.now(),name:name||file.name.replace(/\.[^.]+$/,""),columns:header,rows:data,source_format:"xlsx",description:`Offline Excel import · ${wb.SheetNames[0]}`};
 }
 
 export function parseDelimited(text: string, name: string, sep?: string): OfflineDataset {
