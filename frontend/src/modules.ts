@@ -331,4 +331,7 @@ export const MODULES: ModuleDef[] = [
   },
 ];
 
-export const GROUPS = Array.from(new Set(MODULES.map((m) => m.group)));
+export const GROUPS: string[] = [];
+for (const m of MODULES) {
+  if (m && typeof m.group === "string" && !GROUPS.includes(m.group)) GROUPS.push(m.group);
+}
