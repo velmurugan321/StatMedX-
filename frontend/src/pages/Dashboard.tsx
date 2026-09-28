@@ -8,6 +8,7 @@ import { Btn, ErrorNote, inputCls } from "../components/ui";
 export default function Dashboard() {
   const { datasets, activeDataset, setActiveDataset, refreshDatasets, user } = useApp();
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
@@ -18,20 +19,29 @@ export default function Dashboard() {
   const upload = async (f: File) => {
     setErr(null);
     setBusy(true);
+    setProgress(0);
     try {
-      const fd = new FormData();
-      fd.append("file", f);
-      fd.append("name", f.name.replace(/\.[^.]+$/, ""));
-      try {
-        await api("/api/datasets/upload", { method: "POST", body: fd });
-      } catch {
-        if (!/\.(csv|txt|tsv)$/i.test(f.name)) throw new Error("Offline import currently supports CSV, TXT and TSV. Reconnect for Excel/Stata/SPSS import.");
+      const name = f.name.replace(/\.[^.]+$/, "");
+      const ext = /\.([^.]+)$/.exec(f.name)?.[1]?.toLowerCase() || "";
+
+      // APK/offline-first import: never depend on the server for local files.
+      if (ext === "xlsx" || ext === "xls") {
+        const ds = await parseExcelFile(f, name, setProgress);
+        await saveOfflineDataset(ds);
+      } else if (ext === "csv" || ext === "txt" || ext === "tsv") {
         const text = await f.text();
-        await saveOfflineDataset(parseDelimited(text, f.name.replace(/\.[^.]+$/, "")));
+        setProgress(100);
+        await saveOfflineDataset(parseDelimited(text, name));
+      } else if (ext === "dta" || ext === "sav" || ext === "zsav") {
+        throw new Error("Offline import for Stata/SPSS is not available yet. Export the file to CSV or Excel and import it.");
+      } else {
+        throw new Error("Unsupported file format. Use CSV, TXT, TSV, XLSX or XLS.");
       }
+
       await refreshDatasets();
+      setProgress(100);
     } catch (e: any) {
-      setErr(e.message);
+      setErr(e?.message || "Import failed.");
     } finally {
       setBusy(false);
     }
@@ -82,12 +92,22 @@ export default function Dashboard() {
                  onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
           <Btn variant="soft" onClick={() => setPasteOpen(true)}>📋 Paste data</Btn>
           <Btn onClick={() => fileRef.current?.click()} disabled={busy}>
-            {busy ? "Importing…" : "⬆ Import dataset"}
+            {busy ? `Importing… ${progress}%` : "⬆ Import dataset"}
           </Btn>
         </div>
       </div>
 
       <ErrorNote msg={err} />
+      {busy && (
+        <div className="rounded-xl border border-sky-200 bg-sky-50 p-3">
+          <div className="mb-1 flex justify-between text-xs font-semibold text-sky-700">
+            <span>Reading dataset…</span><span>{progress}%</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-sky-100">
+            <div className="h-full rounded-full bg-sky-500 transition-all" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+      )}
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 text-[13px] text-slate-600">
         <span className="font-bold text-slate-800">Supported formats:</span>{" "}
