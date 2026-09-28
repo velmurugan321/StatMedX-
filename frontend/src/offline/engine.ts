@@ -194,3 +194,42 @@ export function crosstabChiSquare(rowValues: unknown[], columnValues: unknown[])
     expectedBelowFive };
 }
 
+
+
+export interface FisherExactResult {
+  oddsRatio: number | null;
+  pValue: number | null;
+}
+
+/** Exact two-sided Fisher test for a 2x2 table. Returns null for non-2x2 input. */
+export function fisherExact2x2(table: number[][]): FisherExactResult {
+  if (table.length !== 2 || table.some((row) => row.length !== 2)) {
+    return { oddsRatio: null, pValue: null };
+  }
+  const a = table[0][0], b = table[0][1], c = table[1][0], d = table[1][1];
+  if (![a, b, c, d].every((x) => Number.isInteger(x) && x >= 0)) {
+    return { oddsRatio: null, pValue: null };
+  }
+  const oddsRatio = b * c === 0 ? (a * d === 0 ? null : Infinity) : (a * d) / (b * c);
+  const logFact = (n: number) => {
+    let s = 0;
+    for (let i = 2; i <= n; i++) s += Math.log(i);
+    return s;
+  };
+  const logChoose = (n: number, k: number) =>
+    k < 0 || k > n ? Number.NEGATIVE_INFINITY : logFact(n) - logFact(k) - logFact(n - k);
+  const logProb = (x: number) => {
+    const row1 = a + b, row2 = c + d, col1 = a + c, total = row1 + row2;
+    return logChoose(row1, x) + logChoose(row2, col1 - x) - logChoose(total, col1);
+  };
+  const row1 = a + b, row2 = c + d, col1 = a + c;
+  const lower = Math.max(0, col1 - row2), upper = Math.min(row1, col1);
+  if (upper < lower) return { oddsRatio, pValue: null };
+  const observed = logProb(a);
+  let p = 0;
+  for (let x = lower; x <= upper; x++) {
+    const lp = logProb(x);
+    if (lp <= observed + 1e-12) p += Math.exp(lp);
+  }
+  return { oddsRatio, pValue: Math.min(1, p) };
+}
