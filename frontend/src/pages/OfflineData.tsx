@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { summarizeCategorical, summarizeNumeric, type DataRow } from "../offline/engine";
+import { crosstabChiSquare, summarizeCategorical, summarizeNumeric, type DataRow } from "../offline/engine";
 
 type LocalDataset = { id: string; name: string; columns: string[]; rows: DataRow[]; savedAt: string };
 const STORAGE_KEY = "statmedx_offline_datasets_v1";
@@ -37,6 +37,8 @@ export default function OfflineData() {
   const [active, setActive] = useState<string>(datasets[0]?.id || "");
   const [error, setError] = useState("");
   const [frequencyVar, setFrequencyVar] = useState("");
+  const [rowVar, setRowVar] = useState("");
+  const [columnVar, setColumnVar] = useState("");
   const current = datasets.find((d) => d.id === active);
   const save = (next: LocalDataset[]) => {
     try {
@@ -86,6 +88,9 @@ export default function OfflineData() {
     const isNumeric = numeric.n > 0 && categorical.levels.length > 0 && numeric.n + numeric.missing === values.length;
     return { name, isNumeric, numeric, categorical };
   }) : [], [current]);
+  const cross = useMemo(() => current && rowVar && columnVar && rowVar !== columnVar
+    ? crosstabChiSquare(current.rows.map((r) => r[rowVar]), current.rows.map((r) => r[columnVar])) : null,
+    [current, rowVar, columnVar]);
   const frequency = useMemo(() => {
     if (!current || !frequencyVar) return [];
     const counts = new Map<string, number>();
@@ -129,6 +134,18 @@ export default function OfflineData() {
           <tr className="border-t border-slate-200 font-semibold"><td className="p-2">Missing</td><td className="p-2">{current.rows.length - frequency.reduce((sum, item) => sum + item.count, 0)}</td><td className="p-2">—</td></tr>
           <tr className="border-t border-slate-200 font-semibold"><td className="p-2">Valid total</td><td className="p-2">{frequency.reduce((sum, item) => sum + item.count, 0)}</td><td className="p-2">100%</td></tr>
         </tbody></table></div>}
+      </section>
+      <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+        <div><h2 className="text-sm font-bold text-slate-800">Offline crosstab + Pearson chi-square</h2><p className="text-xs text-slate-500">Complete pairs only. Expected cell counts below 5 are flagged; consider Fisher's exact test for suitable 2×2 tables.</p></div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <select aria-label="Row variable" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={rowVar} onChange={(e) => setRowVar(e.target.value)}><option value="">Select row variable</option>{current.columns.map((name) => <option key={name} value={name}>{name}</option>)}</select>
+          <select aria-label="Column variable" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" value={columnVar} onChange={(e) => setColumnVar(e.target.value)}><option value="">Select column variable</option>{current.columns.map((name) => <option key={name} value={name}>{name}</option>)}</select>
+        </div>
+        {rowVar && columnVar && rowVar === columnVar && <p className="text-sm text-amber-700">Choose two different variables.</p>}
+        {cross && <><div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50"><tr><th className="p-2">{rowVar} \ {columnVar}</th>{cross.columnLevels.map((level) => <th className="p-2" key={level}>{level}</th>)}<th className="p-2">Total</th></tr></thead><tbody>
+          {cross.rowLevels.map((level, i) => <tr className="border-t border-slate-100" key={level}><th className="p-2 font-medium">{level}</th>{cross.cells[i].map((n, j) => <td className="p-2" key={j}>{n}</td>)}<td className="p-2 font-semibold">{cross.rowTotals[i]}</td></tr>)}
+          <tr className="border-t border-slate-200 font-semibold"><th className="p-2">Total</th>{cross.columnTotals.map((n, i) => <td className="p-2" key={i}>{n}</td>)}<td className="p-2">{cross.total}</td></tr>
+        </tbody></table></div><div className="flex flex-wrap gap-4 text-sm text-slate-700"><span>χ² = <b>{cross.chiSquare?.toFixed(3) ?? "—"}</b></span><span>df = <b>{cross.degreesFreedom}</b></span><span>p = <b>{cross.pValue == null ? "—" : cross.pValue < 0.001 ? "<0.001" : cross.pValue.toFixed(3)}</b></span><span>Expected cells &lt;5: <b>{cross.expectedBelowFive}</b></span><span>Complete pairs: <b>{cross.total}</b></span></div></>}
       </section>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white"><table className="min-w-full text-left text-xs"><thead className="bg-slate-50"><tr>{current.columns.slice(0, 8).map((c) => <th className="p-2" key={c}>{c}</th>)}</tr></thead><tbody>{current.rows.slice(0, 20).map((r, i) => <tr key={i} className="border-t border-slate-100">{current.columns.slice(0, 8).map((c) => <td className="p-2" key={c}>{r[c] == null ? "" : String(r[c])}</td>)}</tr>)}</tbody></table></div><p className="text-xs text-slate-400">Preview shows up to 20 rows and 8 columns. Stored in this browser/app's local storage; clearing app data may erase it.</p>
     </> : <div className="rounded-xl border-2 border-dashed border-slate-300 p-10 text-center text-sm text-slate-400">{datasets.length ? "Select a local dataset to view its summary." : "No local datasets yet. Import a CSV, TXT or TSV file to begin."}</div>}
