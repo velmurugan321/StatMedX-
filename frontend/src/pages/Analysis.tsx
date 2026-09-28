@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api";
+import { getOfflineDataset, offlineSchema, runOffline } from "../offline";
 import { useApp } from "../state";
 import { MODULES } from "../modules";
 import ResultsView from "../components/ResultsView";
@@ -24,9 +25,14 @@ export default function Analysis() {
 
   useEffect(() => {
     if (!activeDataset) return setSchema(null);
-    api(`/api/datasets/${activeDataset.id}/schema`)
-      .then(setSchema)
-      .catch(() => setSchema(null));
+    if (activeDataset.id < 0) {
+      getOfflineDataset(activeDataset.id).then((ds) => setSchema(ds ? offlineSchema(ds) : null)).catch(() => setSchema(null));
+      return;
+    }
+    api(`/api/datasets/${activeDataset.id}/schema`).then(setSchema).catch(async () => {
+      const ds = await getOfflineDataset(activeDataset.id);
+      setSchema(ds ? offlineSchema(ds) : null);
+    });
   }, [activeDataset?.id, dataVersion]);
 
   const defaults = useMemo(() => {
@@ -47,10 +53,25 @@ export default function Analysis() {
         const v = values[f.key] ?? defaults[f.key] ?? (f.kind === "checkbox" ? false : undefined);
         if (v !== undefined && v !== "") params[f.key] = v;
       }
-      const res = await api("/api/analysis", {
-        method: "POST",
-        body: JSON.stringify({ dataset_id: activeDataset.id, module: mod.id, params }),
-      });
+      let res: any;
+      if (activeDataset.id < 0) {
+        const ds = await getOfflineDataset(activeDataset.id);
+        if (!ds) throw new Error("Offline dataset not found.");
+        const offlineResult = runOffline(ds, mod.id, params);
+        res = { id: null, title: offlineResult.title, result: offlineResult };
+      } else {
+        try {
+          res = await api("/api/analysis", {
+            method: "POST",
+            body: JSON.stringify({ dataset_id: activeDataset.id, module: mod.id, params }),
+          });
+        } catch (e) {
+          const ds = await getOfflineDataset(activeDataset.id);
+          if (!ds) throw e;
+          const offlineResult = runOffline(ds, mod.id, params);
+          res = { id: null, title: offlineResult.title, result: offlineResult };
+        }
+      }
       setResult(res);
     } catch (e: any) {
       setErr(e.message);
@@ -175,7 +196,7 @@ export default function Analysis() {
           )}
           {result && (
             <div className="space-y-4">
-              <div className="flex flex-wrap gap-1.5">
+              {result.id && (\n              <div className="flex flex-wrap gap-1.5">
                 <a className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50"
                    href={`/api/results/${result.id}/export?format=excel`} target="_blank">⬇ Excel</a>
                 <a className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50"
@@ -184,8 +205,7 @@ export default function Analysis() {
                    href={`/api/results/${result.id}/export?format=docx`} target="_blank">⬇ Word</a>
                 <a className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50"
                    href={`/api/results/${result.id}/export?format=pdf`} target="_blank">🖨 PDF / Print</a>
-              </div>
-              <ResultsView result={result.result} />
+              </div>              )}\n              <ResultsView result={result.result} />
             </div>
           )}
         </div>
