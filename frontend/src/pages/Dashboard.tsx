@@ -115,7 +115,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {datasets.map((d) => (
+        {(Array.isArray(datasets) ? datasets : []).map((d) => (
           <div key={d.id}
                className={`group rounded-2xl border p-4 transition hover:shadow-md ${
                  activeDataset?.id === d.id ? "border-sky-400 bg-sky-50/60 ring-1 ring-sky-200" : "border-slate-200 bg-white"
@@ -147,7 +147,7 @@ export default function Dashboard() {
             </div>
           </div>
         ))}
-        {datasets.length === 0 && (
+        {(!Array.isArray(datasets) || datasets.length === 0) && (
           <div className="col-span-full rounded-2xl border-2 border-dashed border-slate-300 p-10 text-center text-sm text-slate-400">
             No datasets yet — import a CSV/Excel/Stata/SPSS file or paste a table to begin.
           </div>
