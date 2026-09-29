@@ -128,7 +128,7 @@ export default function Dashboard() {
               >
                 <div className="text-[14.5px] font-bold text-slate-800">{d.name}</div>
                 <div className="mt-0.5 text-[12px] text-slate-500">
-                  {d.n_rows.toLocaleString()} rows × {d.n_cols} variables · {d.source_format.toUpperCase()}
+                  {Number(d.n_rows ?? d.rows?.length ?? 0).toLocaleString()} rows × {Number(d.n_cols ?? d.columns?.length ?? 0)} variables · {d.source_format.toUpperCase()}
                 </div>
               </button>
               <button className="rounded-md p-1 text-slate-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
