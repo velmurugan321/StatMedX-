@@ -67,7 +67,7 @@ export async function parseExcelFile(file: File, name?: string, onProgress?: (pe
  if(!rows.length) throw new Error("Excel sheet is empty.");
  const header=rows[0].map((v:any,i:number)=>String(v??"").trim()||`V${i+1}`);
  const data=rows.slice(1).filter(r=>r.some((v:any)=>String(v??"").trim()!=="")).map(r=>header.map((_,i)=>r[i]??""));
- return {id:-Date.now(),name:name||file.name.replace(/\.[^.]+$/,""),columns:header,rows:data,source_format:"xlsx",description:`Offline Excel import · ${wb.SheetNames[0]}`};
+ return {id:-Date.now(),name:name||file.name.replace(/\.[^.]+$/,""),n_rows:data.length,n_cols:header.length,columns:header,rows:data,source_format:"xlsx",description:`Offline Excel import · ${wb.SheetNames[0]}`};
 }
 
 export function parseDelimited(text: string, name: string, sep?: string): OfflineDataset {
