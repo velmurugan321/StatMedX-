@@ -5,7 +5,7 @@ import PlotlyChart from "./PlotlyChart";
 export function ResultBlocks({ result }: { result: any }) {
   return (
     <div className="space-y-4">
-      {result?.blocks?.map((b: any, i: number) => {
+      {(Array.isArray(result?.blocks) ? result.blocks : []).map((b: any, i: number) => {
         if (b.type === "text")
           return (
             <div key={i} className="text-sm leading-relaxed text-slate-700"
@@ -27,13 +27,13 @@ export function ResultBlocks({ result }: { result: any }) {
                 <table className="smx-table">
                   <thead>
                     <tr>
-                      {b.columns.map((c: any) => (
+                      {(Array.isArray(b.columns) ? b.columns : []).map((c: any) => (
                         <th key={c.key}>{c.label}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {b.rows.map((r: any[], ri: number) => (
+                    {(Array.isArray(b.rows) ? b.rows : []).map((r: any[], ri: number) => (
                       <tr key={ri}>
                         {r.map((v, ci) => (
                           <td key={ci} className={ci === 0 ? "font-medium text-slate-700" : ""}>
