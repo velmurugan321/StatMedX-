@@ -82,13 +82,13 @@ export default function Analysis() {
     }
   };
 
-  const cols: any[] = schema?.columns || [];
+  const cols: any[] = Array.isArray(schema?.columns) ? schema.columns : [];
   const numeric = cols.filter((c) => c.numeric);
   const categoricalish = cols.filter((c) => !c.numeric || c.n_unique <= 15);
 
   const fieldInput = (f: any) => {
     if (f.kind === "vars") {
-      const pool = f.numeric ? numeric : f.categorical ? categoricalish : cols;
+      const pool = Array.isArray(f.numeric ? numeric : f.categorical ? categoricalish : cols) ? (f.numeric ? numeric : f.categorical ? categoricalish : cols) : [];
       const selected: string[] = values[f.key] ?? [];
       return (
         <select
@@ -107,7 +107,7 @@ export default function Analysis() {
       );
     }
     if (f.kind === "var") {
-      const pool = f.numeric ? numeric : f.categorical ? categoricalish : cols;
+      const pool = Array.isArray(f.numeric ? numeric : f.categorical ? categoricalish : cols) ? (f.numeric ? numeric : f.categorical ? categoricalish : cols) : [];
       return (
         <select className={inputCls} value={values[f.key] ?? ""} onChange={(e) => setVal(f.key, e.target.value)}>
           <option value="">— select —</option>
@@ -122,7 +122,7 @@ export default function Analysis() {
     if (f.kind === "select")
       return (
         <select className={inputCls} value={values[f.key] ?? f.default ?? ""} onChange={(e) => setVal(f.key, e.target.value)}>
-          {f.options.map((o: string) => (
+          {(Array.isArray(f.options) ? f.options : []).map((o: string) => (
             <option key={o} value={o}>{o}</option>
           ))}
         </select>
