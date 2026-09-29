@@ -88,7 +88,7 @@ export default function DataEditor() {
   };
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
-  const cols = schema?.columns || [];
+  const cols: any[] = Array.isArray(schema?.columns) ? schema.columns : [];
 
   // ---- dialogs ----
   const varNames = cols.map((c: any) => c.name);
@@ -229,7 +229,7 @@ export default function DataEditor() {
               <table className="smx-table">
                 <thead><tr>{(res.duplicates[0] ? Object.keys(res.duplicates[0]) : ["—"]).map((k: string) => <th key={k}>{k}</th>)}</tr></thead>
                 <tbody>
-                  {res.duplicates.map((r: any, i: number) => (
+                  {(Array.isArray(res?.duplicates) ? res.duplicates : []).map((r: any, i: number) => (
                     <tr key={i}>{Object.values(r).map((v: any, j: number) => <td key={j}>{v === null ? "" : String(v)}</td>)}</tr>
                   ))}
                 </tbody>
@@ -295,7 +295,7 @@ export default function DataEditor() {
                 <thead>
                   <tr>
                     <th className="w-10 text-center text-slate-400">#</th>
-                    {data?.columns.map((c: any) => (
+                    {(Array.isArray(data?.columns) ? data.columns : []).map((c: any) => (
                       <th key={c.name} className="sticky top-0">
                         {c.name}
                         <span className="ml-1 font-normal text-slate-400">{c.type === "string" ? "abc" : "123"}</span>
@@ -305,11 +305,11 @@ export default function DataEditor() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data?.rows.map((row: any[], ri: number) => (
+                  {(Array.isArray(data?.rows) ? data.rows : []).map((row: any[], ri: number) => (
                     <tr key={ri} className="group">
                       <td className="text-center text-[11px] text-slate-400">{data.row_start + ri + 1}</td>
-                      {row.map((v, ci) => {
-                        const colName = data.columns[ci].name;
+                      {(Array.isArray(row) ? row : []).map((v, ci) => {
+                        const colName = data?.columns?.[ci]?.name || String(ci);
                         const isEditing = editing && editing.r === data.row_start + ri && editing.c === colName;
                         return (
                           <td key={ci}
