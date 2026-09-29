@@ -15,8 +15,9 @@ export default function Results() {
     try {
       const q = activeDataset ? `?dataset_id=${activeDataset.id}` : "";
       const l = await api<any[]>(`/api/results${q}`);
-      setList(l);
-      if (l.length && !selected) openResult(l[0].id);
+      const safeList = Array.isArray(l) ? l : [];
+      setList(safeList);
+      if (safeList.length && !selected) openResult(safeList[0].id);
     } finally {
       setLoading(false);
     }
@@ -34,11 +35,13 @@ export default function Results() {
   const copyTables = async () => {
     if (!selected) return;
     const lines: string[] = [];
-    for (const b of selected.result.blocks || []) {
+    for (const b of (Array.isArray(selected?.result?.blocks) ? selected.result.blocks : [])) {
       if (b.type === "table") {
         lines.push(b.name || "");
-        lines.push(b.columns.map((c: any) => c.label).join("\t"));
-        for (const r of b.rows) lines.push(r.map((v: any) => (v === null ? "" : String(v))).join("\t"));
+        const columns = Array.isArray(b.columns) ? b.columns : [];
+        const rows = Array.isArray(b.rows) ? b.rows : [];
+        lines.push(columns.map((c: any) => c?.label ?? c?.key ?? "").join("\t"));
+        for (const r of rows) lines.push((Array.isArray(r) ? r : []).map((v: any) => (v == null ? "" : String(v))).join("\t"));
         lines.push("");
       } else if (b.type === "text") {
         lines.push(b.content.replace(/<[^>]+>/g, ""));
@@ -78,7 +81,7 @@ export default function Results() {
           {!loading && list.length === 0 && (
             <div className="p-6 text-center text-[13px] text-slate-400">No saved results yet — run an analysis.</div>
           )}
-          {list.map((r) => (
+          {(Array.isArray(list) ? list : []).map((r) => (
             <button key={r.id}
                     className={`w-full rounded-lg px-3 py-2 text-left transition ${
                       selected?.id === r.id ? "bg-sky-50 ring-1 ring-sky-200" : "hover:bg-slate-50"
