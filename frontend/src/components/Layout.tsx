@@ -60,7 +60,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             }}
           >
             {datasets.length === 0 && <option value="">— no datasets —</option>}
-            {datasets.map((d) => (
+            {(Array.isArray(datasets) ? datasets : []).map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name} ({d.n_rows}×{d.n_cols})
               </option>
@@ -75,7 +75,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <NavItem to="/dofile" icon="⌨" label="Do-file editor" onClick={() => setMobileOpen(false)} />
           <NavItem to="/results" icon="🗂" label="Results window" onClick={() => setMobileOpen(false)} />
           <div className="pt-3" />
-          {GROUPS.map((g) => (
+          {(Array.isArray(GROUPS) ? GROUPS : []).map((g) => (
             <div key={g}>
               <button
                 className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-[10.5px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-200"
@@ -86,7 +86,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </button>
               {openGroup === g && (
                 <div className="space-y-0.5 pb-1">
-                  {MODULES.filter((m) => m.group === g).map((m) => (
+                  {(Array.isArray(MODULES) ? MODULES : []).filter((m) => m.group === g).map((m) => (
                     <NavItem key={m.id} to={`/analysis/${m.id}`} icon={m.icon} label={m.title}
                              onClick={() => setMobileOpen(false)} />
                   ))}
