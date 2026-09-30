@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, downloadFile } from "../api";
 import { useApp } from "../state";
 import ResultsView from "../components/ResultsView";
-import { Btn, Spinner } from "../components/ui";
+import { Btn, ErrorNote, Spinner } from "../components/ui";
 import { getOfflineResult, listOfflineResults } from "../offline";
 import * as XLSX from "xlsx";
 
@@ -11,6 +11,7 @@ export default function Results() {
   const [list, setList] = useState<any[]>([]);
   const [selected, setSelected] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -18,19 +19,18 @@ export default function Results() {
       if (activeDataset?.id < 0) {
         const local = await listOfflineResults(activeDataset.id);
         setList(local);
-        setSelected(local[0] ?? null);
+        setSelected(current => local.find(item => item.id === current?.id) ?? null);
         return;
       }
       const q = activeDataset ? `?dataset_id=${activeDataset.id}` : "";
       const l = await api<any[]>(`/api/results${q}`);
       const safeList = Array.isArray(l) ? l : [];
       setList(safeList);
-      if (!safeList.length) setSelected(null);
-      else if (!safeList.some((item: any) => item.id === selected?.id)) await openResult(safeList[0].id);
+      if (!safeList.some((item: any) => item.id === selected?.id)) setSelected(null);
     } catch {
       const local = await listOfflineResults(activeDataset?.id);
       setList(local);
-      setSelected(local[0] ?? null);
+      setSelected(current => local.find(item => item.id === current?.id) ?? null);
     } finally {
       setLoading(false);
     }
@@ -41,6 +41,7 @@ export default function Results() {
   }, [loadList]);
 
   const openResult = async (id: number) => {
+    setErr(null);
     if (id < 0) {
       setSelected(await getOfflineResult(id));
       return;
@@ -100,20 +101,23 @@ export default function Results() {
         </div>
         {selected && (
           <div className="flex flex-wrap gap-1.5">
-            <Btn variant="ghost" onClick={copyTables}>⧉ Copy</Btn>
+            <Btn variant="ghost" onClick={() => setSelected(null)}>← Back to results list</Btn>
+            <Btn variant="ghost" onClick={() => copyTables().catch((e: any) => setErr(e?.message || "Could not copy result."))}>⧉ Copy</Btn>
             {selected.id < 0 ? <>
-              <Btn variant="ghost" onClick={() => exportOffline("excel")}>⬇ Excel</Btn>
-              <Btn variant="ghost" onClick={() => exportOffline("csv")}>⬇ CSV</Btn>
+              <Btn variant="ghost" onClick={() => { try { exportOffline("excel"); } catch (e: any) { setErr(e?.message || "Excel export failed."); } }}>⬇ Excel</Btn>
+              <Btn variant="ghost" onClick={() => { try { exportOffline("csv"); } catch (e: any) { setErr(e?.message || "CSV export failed."); } }}>⬇ CSV</Btn>
               <Btn variant="ghost" onClick={() => window.print()}>🖨 Print / PDF</Btn>
             </> : <>
-              <Btn variant="ghost" onClick={() => downloadFile(`/api/results/${selected.id}/export?format=excel`, `${selected.module}-results.xlsx`)}>⬇ Excel</Btn>
-              <Btn variant="ghost" onClick={() => downloadFile(`/api/results/${selected.id}/export?format=csv`, `${selected.module}-results.csv`)}>⬇ CSV</Btn>
-              <Btn variant="ghost" onClick={() => downloadFile(`/api/results/${selected.id}/export?format=docx`, `${selected.module}-results.docx`)}>⬇ Word</Btn>
-              <Btn variant="ghost" onClick={() => downloadFile(`/api/results/${selected.id}/export?format=pdf`, `${selected.module}-results.pdf`)}>🖨 PDF</Btn>
+              <Btn variant="ghost" onClick={() => downloadFile(`/api/results/${selected.id}/export?format=excel`, `${selected.module}-results.xlsx`).catch((e: any) => setErr(e.message))}>⬇ Excel</Btn>
+              <Btn variant="ghost" onClick={() => downloadFile(`/api/results/${selected.id}/export?format=csv`, `${selected.module}-results.csv`).catch((e: any) => setErr(e.message))}>⬇ CSV</Btn>
+              <Btn variant="ghost" onClick={() => downloadFile(`/api/results/${selected.id}/export?format=docx`, `${selected.module}-results.docx`).catch((e: any) => setErr(e.message))}>⬇ Word</Btn>
+              <Btn variant="ghost" onClick={() => downloadFile(`/api/results/${selected.id}/export?format=pdf`, `${selected.module}-results.pdf`).catch((e: any) => setErr(e.message))}>🖨 PDF</Btn>
             </>}
           </div>
         )}
       </div>
+
+      <ErrorNote msg={err} />
 
       <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
         <div className="h-fit space-y-1.5 rounded-2xl border border-slate-200 bg-white p-2">
@@ -126,7 +130,7 @@ export default function Results() {
                     className={`w-full rounded-lg px-3 py-2 text-left transition ${
                       selected?.id === r.id ? "bg-sky-50 ring-1 ring-sky-200" : "hover:bg-slate-50"
                     }`}
-                    onClick={() => openResult(r.id)}>
+                    onClick={() => openResult(r.id).catch((e: any) => setErr(e?.message || "Could not open result."))}>
               <div className="truncate text-[13px] font-semibold text-slate-700">{r.title}</div>
               <div className="text-[11px] text-slate-400">
                 {r.module} · {new Date(r.created_at).toLocaleString()}
@@ -149,4 +153,3 @@ export default function Results() {
     </div>
   );
 }
-
