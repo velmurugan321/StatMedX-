@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../api";
-import { getOfflineDataset, offlineSchema, runOffline } from "../offline";
+import { getOfflineDataset, offlineSchema, runOffline, saveOfflineResult } from "../offline";
 import * as XLSX from "xlsx";
 import { useApp } from "../state";
 import { MODULES } from "../modules";
@@ -59,7 +59,8 @@ export default function Analysis() {
         const ds = await getOfflineDataset(activeDataset.id);
         if (!ds) throw new Error("Offline dataset not found.");
         const offlineResult = runOffline(ds, mod.id, params);
-        res = { id: null, title: offlineResult.title, result: offlineResult };
+        const saved = await saveOfflineResult({ dataset_id: activeDataset.id, module: mod.id, title: offlineResult.title, result: offlineResult });
+        res = { ...saved, result: offlineResult };
       } else {
         try {
           res = await api("/api/analysis", {
@@ -70,7 +71,8 @@ export default function Analysis() {
           const ds = await getOfflineDataset(activeDataset.id);
           if (!ds) throw e;
           const offlineResult = runOffline(ds, mod.id, params);
-          res = { id: null, title: offlineResult.title, result: offlineResult };
+          const saved = await saveOfflineResult({ dataset_id: activeDataset.id, module: mod.id, title: offlineResult.title, result: offlineResult });
+          res = { ...saved, result: offlineResult };
         }
       }
       setResult(res);
@@ -241,7 +243,7 @@ export default function Analysis() {
           {!busy && !result && !err && (
             <div className="rounded-2xl border-2 border-dashed border-slate-200 p-10 text-center text-sm text-slate-400">
               Configure the options and press <b>Run analysis</b>.<br />
-              Results are saved automatically to the Results window.
+              Results are saved locally for offline datasets, and to your account for online datasets.
             </div>
           )}
           {result && (
@@ -250,7 +252,8 @@ export default function Analysis() {
                 <Btn variant="ghost" onClick={downloadExcel}>⬇ Excel</Btn>
                 <Btn variant="ghost" onClick={downloadCSV}>⬇ CSV</Btn>
                 <Btn variant="ghost" onClick={printResult}>🖨 PDF / Print</Btn>
-                {result.id && <span className="self-center text-[11px] text-slate-400">Server result #${result.id}</span>}
+                {result.id > 0 && <span className="self-center text-[11px] text-slate-400">Server result #{result.id}</span>}
+                {result.id < 0 && <span className="self-center text-[11px] text-slate-400">Saved on this device</span>}
               </div>
               <div data-result-print><ResultsView result={result.result} /></div>
             </div>
@@ -260,3 +263,4 @@ export default function Analysis() {
     </div>
   );
 }
+
