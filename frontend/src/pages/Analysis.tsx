@@ -249,6 +249,7 @@ export default function Analysis() {
           {result && (
             <div className="space-y-4">
               <div className="flex flex-wrap gap-1.5">
+                <Btn variant="ghost" onClick={() => setResult(null)}>← Back to analysis options</Btn>
                 <Btn variant="ghost" onClick={downloadExcel}>⬇ Excel</Btn>
                 <Btn variant="ghost" onClick={downloadCSV}>⬇ CSV</Btn>
                 <Btn variant="ghost" onClick={printResult}>🖨 PDF / Print</Btn>
@@ -263,4 +264,3 @@ export default function Analysis() {
     </div>
   );
 }
-
