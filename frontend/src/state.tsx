@@ -22,11 +22,11 @@ export function AppProvider({children}:{children:React.ReactNode}){
    const list=await api<any[]>("/api/datasets");
    if (!Array.isArray(list)) throw new Error("Invalid datasets response");
    setDatasets(list);
-   setActiveDataset(cur=>cur&&list.some(d=>d.id===cur.id)?list.find(d=>d.id===cur.id)!:cur??list[0]??null);
+   setActiveDataset(cur=>list.find(d=>d.id===cur?.id)??list[0]??null);
   }catch{
    const local=await listOfflineDatasets();
    setDatasets(local);
-   setActiveDataset(cur=>cur&&local.some(d=>d.id===cur.id)?local.find(d=>d.id===cur.id)!:cur??local[0]??null);
+   setActiveDataset(cur=>local.find(d=>d.id===cur?.id)??local[0]??null);
   }
  };
  const loginDemo=async()=>{
