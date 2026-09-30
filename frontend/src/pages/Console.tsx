@@ -49,6 +49,49 @@ export default function Console() {
         const [name, ...tail] = cmd.trim().split(/\s+/);
         const command = name.toLowerCase();
         const rest = tail.join(" ").trim();
+        // Local imports have negative IDs. When the analysis API is available,
+        // mirror the current local data there and use the full Stata-style parser.
+        try {
+          let remoteId = ds.remote_dataset_id;
+          if (remoteId) {
+            try { await api(`/api/datasets/${remoteId}`); }
+            catch { remoteId = undefined; }
+          }
+          if (!remoteId) {
+            const csvCell = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+            const csv = [ds.columns, ...ds.rows].map(row => row.map(csvCell).join(",")).join("\n");
+            const form = new FormData();
+            form.append("name", ds.name);
+            form.append("file", new File([csv], `${ds.name || "dataset"}.csv`, { type: "text/csv" }));
+            const uploaded = await api<any>("/api/datasets/upload", { method: "POST", body: form });
+            remoteId = uploaded.id;
+          }
+          await api(`/api/datasets/${remoteId}/data`, {
+            method: "PUT", body: JSON.stringify({ columns: ds.columns, rows: ds.rows }),
+          });
+          const response = await api<any>("/api/commands", {
+            method: "POST", body: JSON.stringify({ dataset_id: remoteId, command: cmd }),
+          });
+          const first = await api<any>(`/api/datasets/${remoteId}/data?page=1&size=500`);
+          const columns = (first.columns || []).map((c: any) => c.name);
+          const rows: any[][] = (first.rows || []).map((r: any) => columns.map((c: string) => r[c]));
+          let page = 2;
+          while (rows.length < Number(first.total || 0)) {
+            const next = await api<any>(`/api/datasets/${remoteId}/data?page=${page++}&size=500`);
+            rows.push(...(next.rows || []).map((r: any) => columns.map((c: string) => r[c])));
+            if (!(next.rows || []).length) break;
+          }
+          const synced = { ...ds, remote_dataset_id: remoteId, columns, rows, n_rows: rows.length, n_cols: columns.length };
+          await saveOfflineDataset(synced);
+          setActiveDataset(synced);
+          setEntries((e) => { const copy = [...e]; copy[copy.length - 1] = { cmd, result: response.result }; return copy; });
+          bumpData();
+          setBusy(false);
+          return;
+        } catch {
+          // Continue to the browser-side subset below; its error explains which
+          // commands need a live analysis server.
+        }
         const table = (title: string, columns: string[], rows: any[][], note?: string) => ({
           title, command: cmd,
           blocks: [{ type: "table", name: title, columns: columns.map((label, i) => ({ key: `c${i}`, label })), rows, note }],
