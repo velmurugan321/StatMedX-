@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
    No network, server, or external runtime is required for these modules. */
 export type OfflineDataset = {
   id: number; name: string; n_rows: number; n_cols: number; source_format: string;
-  columns: string[]; rows: any[]; description?: string;
+  columns: string[]; rows: any[]; description?: string; remote_dataset_id?: number;
 };
 
 const DB = "statmedx-offline";
