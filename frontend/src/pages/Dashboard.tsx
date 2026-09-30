@@ -10,6 +10,7 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [err, setErr] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [pasteName, setPasteName] = useState("Pasted data");
@@ -86,7 +87,28 @@ export default function Dashboard() {
     if (id < 0) await deleteOfflineDataset(id);
     else await api(`/api/datasets/${id}`, { method: "DELETE" });
     if (activeDataset?.id === id) setActiveDataset(null);
+    setSelectedIds((current) => { const next = new Set(current); next.delete(id); return next; });
     await refreshDatasets();
+  };
+
+  const deleteSelected = async () => {
+    const ids = [...selectedIds];
+    if (!ids.length || !confirm(`Delete ${ids.length} selected dataset${ids.length === 1 ? "" : "s"} and their results?`)) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      for (const id of ids) {
+        if (id < 0) await deleteOfflineDataset(id);
+        else await api(`/api/datasets/${id}`, { method: "DELETE" });
+      }
+      setSelectedIds(new Set());
+      await refreshDatasets();
+    } catch (e: any) {
+      setErr(e?.message || "Could not delete the selected datasets.");
+      await refreshDatasets();
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -127,6 +149,13 @@ export default function Dashboard() {
         Offline: CSV · TXT/TSV · Excel (.xlsx). Stata (.dta) and SPSS (.sav) require a configured server connection.
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-slate-600">Select datasets to remove them from this device or account.</p>
+        <Btn variant="danger" onClick={deleteSelected} disabled={!selectedIds.size || busy}>
+          🗑 Delete selected ({selectedIds.size})
+        </Btn>
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {(Array.isArray(datasets) ? datasets : []).map((d) => (
           <div key={d.id}
@@ -134,17 +163,30 @@ export default function Dashboard() {
                  activeDataset?.id === d.id ? "border-sky-400 bg-sky-50/60 ring-1 ring-sky-200" : "border-slate-200 bg-white"
                }`}>
             <div className="flex items-start justify-between gap-2">
-              <button
-                className="text-left"
-                onClick={() => setActiveDataset(d)}
-                title="Set as active dataset"
-              >
-                <div className="text-[14.5px] font-bold text-slate-800">{d.name}</div>
-                <div className="mt-0.5 text-[12px] text-slate-500">
-                  {Number(d.n_rows ?? d.rows?.length ?? 0).toLocaleString()} rows × {Number(d.n_cols ?? d.columns?.length ?? 0)} variables · {d.source_format.toUpperCase()}
-                </div>
-              </button>
-              <button className="rounded-md p-1 text-slate-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+              <div className="flex min-w-0 items-start gap-2">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 shrink-0 accent-sky-600"
+                  checked={selectedIds.has(d.id)}
+                  aria-label={`Select ${d.name} for deletion`}
+                  onChange={(e) => setSelectedIds((current) => {
+                    const next = new Set(current);
+                    if (e.target.checked) next.add(d.id); else next.delete(d.id);
+                    return next;
+                  })}
+                />
+                <button
+                  className="text-left"
+                  onClick={() => setActiveDataset(d)}
+                  title="Set as active dataset"
+                >
+                  <div className="text-[14.5px] font-bold text-slate-800">{d.name}</div>
+                  <div className="mt-0.5 text-[12px] text-slate-500">
+                    {Number(d.n_rows ?? d.rows?.length ?? 0).toLocaleString()} rows × {Number(d.n_cols ?? d.columns?.length ?? 0)} variables · {String(d.source_format || "data").toUpperCase()}
+                  </div>
+                </button>
+              </div>
+              <button className="rounded-md p-1 text-slate-500 transition hover:bg-red-50 hover:text-red-600"
                       onClick={() => del(d.id)} title="Delete dataset">
                 🗑
               </button>
@@ -185,4 +227,3 @@ export default function Dashboard() {
     </div>
   );
 }
-
