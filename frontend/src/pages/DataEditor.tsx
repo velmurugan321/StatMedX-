@@ -13,7 +13,7 @@ interface TransformDialog {
 }
 
 export default function DataEditor() {
-  const { activeDataset, dataVersion, bumpData, refreshDatasets } = useApp();
+  const { activeDataset, dataVersion, bumpData, refreshDatasets, captureDataset, recordUndo } = useApp();
   const [data, setData] = useState<any | null>(null);
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<{ r: number; c: string; v: string } | null>(null);
@@ -85,6 +85,7 @@ export default function DataEditor() {
           return;
         }
         await saveOfflineDataset(res.dataset);
+        recordUndo(ds);
         setMsg(res.message);
         setDlg(null);
         setPage(1);
@@ -92,10 +93,12 @@ export default function DataEditor() {
         await refreshDatasets();
         return;
       }
+      const before = await captureDataset(activeDataset);
       const res = await api(`/api/datasets/${dsid}/transform`, {
         method: "POST",
         body: JSON.stringify({ op, params }),
       });
+      recordUndo(before);
       setMsg(res.message || "Done");
       setDlg(null);
       await load();
@@ -113,23 +116,42 @@ export default function DataEditor() {
     if (!editing) return;
     try {
       if (dsid! < 0) {
+        const before = await getOfflineDataset(dsid!);
+        if (!before) throw new Error("Offline dataset not found.");
         await updateOfflineCell(dsid!, editing.r, editing.c, editing.v);
+        recordUndo(before);
         setEditing(null);
         await load();
         bumpData();
         refreshDatasets();
         return;
       }
+      const before = await captureDataset(activeDataset);
       await api(`/api/datasets/${dsid}/cell`, {
         method: "POST",
         body: JSON.stringify({ row: editing.r, column: editing.c, value: editing.v === "" ? null : editing.v }),
       });
+      recordUndo(before);
       setEditing(null);
       await load();
     } catch (e: any) {
       setErr(e.message);
       setEditing(null);
     }
+  };
+
+  const deleteRow = async (index:number) => {
+    try {
+      if (dsid! < 0) {
+        const before = await getOfflineDataset(dsid!);
+        if (!before) throw new Error("Offline dataset not found.");
+        await deleteOfflineRow(dsid!, index);
+        recordUndo(before);
+        await load(); bumpData(); await refreshDatasets();
+      } else {
+        await runTransform("delete_rows", { indices: [index] });
+      }
+    } catch (e:any) { setErr(e.message); }
   };
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
@@ -382,7 +404,7 @@ export default function DataEditor() {
                         <button
                           className="px-1 text-[11px] text-slate-300 opacity-0 hover:text-red-500 group-hover:opacity-100"
                           title="Delete case"
-                          onClick={() => dsid! < 0 ? deleteOfflineRow(dsid!, data.row_start + ri).then(() => { load(); bumpData(); refreshDatasets(); }).catch((e: any) => setErr(e.message)) : runTransform("delete_rows", { indices: [data.row_start + ri] })}
+                          onClick={() => void deleteRow(data.row_start + ri)}
                         >✕</button>
                       </td>
                     </tr>
