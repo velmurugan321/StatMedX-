@@ -39,8 +39,10 @@ export function AppProvider({children}:{children:React.ReactNode}){
   try{
    const list=await api<any[]>("/api/datasets");
    if (!Array.isArray(list)) throw new Error("Invalid datasets response");
-   setDatasets(list);
-   setActiveDataset(cur=>list.find(d=>d.id===cur?.id)??list[0]??null);
+   const local=await listOfflineDatasets();
+   const combined=[...local,...list];
+   setDatasets(combined);
+   setActiveDataset(cur=>combined.find(d=>d.id===cur?.id)??combined[0]??null);
   }catch{
    const local=await listOfflineDatasets();
    setDatasets(local);
