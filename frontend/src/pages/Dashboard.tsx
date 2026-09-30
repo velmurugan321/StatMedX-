@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { deleteOfflineDataset, parseDelimited, parseExcelFile, saveOfflineDataset } from "../offline";
+import { deleteOfflineDataset, parseDelimited, parseExcelFile, saveOfflineDataset, type OfflineDataset } from "../offline";
 import { useApp } from "../state";
 import { Btn, ErrorNote, inputCls } from "../components/ui";
 
@@ -14,6 +14,8 @@ export default function Dashboard() {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [pasteName, setPasteName] = useState("Pasted data");
+  const [previewDatasets, setPreviewDatasets] = useState<OfflineDataset[] | null>(null);
+  const [previewIndex, setPreviewIndex] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const nav = useNavigate();
 
@@ -29,13 +31,16 @@ export default function Dashboard() {
       // APK/offline-first import: never depend on the server for local files.
       if (ext === "xlsx" || ext === "xls") {
         importedDatasets = await parseExcelFile(f, name, setProgress);
-        for (const dataset of importedDatasets) await saveOfflineDataset(dataset);
+        setPreviewDatasets(importedDatasets);
+        setPreviewIndex(0);
+        return;
       } else if (ext === "csv" || ext === "txt" || ext === "tsv") {
         const text = await f.text();
         setProgress(100);
         const dataset = parseDelimited(text, name);
-        importedDatasets = [dataset];
-        await saveOfflineDataset(dataset);
+        setPreviewDatasets([dataset]);
+        setPreviewIndex(0);
+        return;
       } else if (ext === "dta" || ext === "sav" || ext === "zsav") {
         const form = new FormData();
         form.append("file", f);
@@ -59,6 +64,17 @@ export default function Dashboard() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const confirmImport = async (allSheets=false) => {
+    if (!previewDatasets?.length) return;
+    setBusy(true);setErr(null);
+    try {
+      const chosen=allSheets?previewDatasets:[previewDatasets[previewIndex]];
+      for(const dataset of chosen)await saveOfflineDataset(dataset);
+      await refreshDatasets();setActiveDataset(chosen[0]);setPreviewDatasets(null);
+    } catch(e:any) { setErr(e.message||"Could not save the imported dataset."); }
+    finally { setBusy(false); }
   };
 
   const paste = async () => {
@@ -144,6 +160,22 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {previewDatasets?.length ? (() => {
+        const ds=previewDatasets[Math.min(previewIndex,previewDatasets.length-1)];
+        const missing=ds.rows.reduce((sum,row)=>sum+row.filter((v:any)=>v===null||v===undefined||v==="").length,0);
+        return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3" onClick={()=>setPreviewDatasets(null)}>
+          <section className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-2xl bg-white p-5 shadow-2xl" onClick={e=>e.stopPropagation()}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div><h2 className="text-lg font-bold text-slate-900">Import preview</h2><p className="text-sm text-slate-500">Check the sheet, columns, and sample data before saving.</p></div>
+              {previewDatasets.length>1&&<label className="text-xs font-semibold text-slate-600">Excel sheet<select className="ml-2 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm" value={previewIndex} onChange={e=>setPreviewIndex(Number(e.target.value))}>{previewDatasets.map((sheet,i)=><option key={sheet.id} value={i}>{sheet.description?.replace(/^Excel sheet · /,"")||sheet.name}</option>)}</select></label>}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-600"><span><b>{ds.name}</b></span><span>{ds.n_rows.toLocaleString()} rows × {ds.n_cols} columns</span><span>{missing.toLocaleString()} missing cells</span><span>Previewing first {Math.min(10,ds.n_rows)} rows</span></div>
+            <div className="mt-3 max-h-[52vh] overflow-auto rounded-lg border border-slate-200"><table className="smx-table"><thead><tr>{ds.columns.map(c=><th key={c}>{c}</th>)}</tr></thead><tbody>{ds.rows.slice(0,10).map((row,ri)=><tr key={ri}>{ds.columns.map((_,ci)=><td key={ci}>{row[ci]===null||row[ci]===""?<span className="text-slate-300">Missing</span>:String(row[ci])}</td>)}</tr>)}</tbody></table></div>
+            <div className="mt-4 flex flex-wrap justify-end gap-2"><Btn variant="ghost" onClick={()=>setPreviewDatasets(null)} disabled={busy}>Cancel</Btn>{previewDatasets.length>1&&<Btn variant="soft" onClick={()=>void confirmImport(true)} disabled={busy}>Import all {previewDatasets.length} sheets</Btn>}<Btn onClick={()=>void confirmImport(false)} disabled={busy}>{busy?"Saving…":`Import ${previewDatasets.length>1?"selected sheet":"dataset"}`}</Btn></div>
+          </section>
+        </div>;
+      })() : null}
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 text-[13px] text-slate-600">
         <span className="font-bold text-slate-800">Supported formats:</span>{" "}
