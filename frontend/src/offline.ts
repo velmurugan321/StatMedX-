@@ -126,15 +126,79 @@ export function readFileWithProgress(file: File, onProgress?: (percent:number)=>
  });
 }
 
-export async function parseExcelFile(file: File, name?: string, onProgress?: (percent:number)=>void): Promise<OfflineDataset> {
+export function parseExcelWorkbook(buffer: ArrayBuffer | Uint8Array, name: string): OfflineDataset[] {
+ const wb=XLSX.read(buffer,{type:"array",cellDates:false});
+ const datasets:OfflineDataset[]=[];
+ for(const sheetName of wb.SheetNames){
+  const ws=wb.Sheets[sheetName];
+  const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+  if(!rows.length)continue;
+  const rawHeader=rows[0].map((v:any,i:number)=>String(v??"").trim()||`V${i+1}`);
+  const used=new Set<string>();
+  const header=rawHeader.map((value:string)=>{let candidate=value,suffix=2;while(used.has(candidate))candidate=`${value}_${suffix++}`;used.add(candidate);return candidate;});
+  const data=rows.slice(1).filter(r=>r.some((v:any)=>String(v??"").trim()!=="")).map(r=>header.map((_,i)=>r[i]??""));
+  if(!data.length)continue;
+  datasets.push({id:newLocalId(),name:wb.SheetNames.length>1?`${name} — ${sheetName}`:name,n_rows:data.length,n_cols:header.length,columns:header,rows:data,source_format:"xlsx",description:`Excel sheet · ${sheetName}`});
+ }
+ if(!datasets.length)throw new Error("The Excel workbook has no non-empty sheets with a header and data rows.");
+ return datasets;
+}
+
+export async function parseExcelFile(file: File, name?: string, onProgress?: (percent:number)=>void): Promise<OfflineDataset[]> {
  const buf=await readFileWithProgress(file,onProgress);
- const wb=XLSX.read(buf,{type:"array",cellDates:false});
- const ws=wb.Sheets[wb.SheetNames[0]];
- const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
- if(!rows.length) throw new Error("Excel sheet is empty.");
- const header=rows[0].map((v:any,i:number)=>String(v??"").trim()||`V${i+1}`);
- const data=rows.slice(1).filter(r=>r.some((v:any)=>String(v??"").trim()!=="")).map(r=>header.map((_,i)=>r[i]??""));
- return {id:newLocalId(),name:name||file.name.replace(/\.[^.]+$/,""),n_rows:data.length,n_cols:header.length,columns:header,rows:data,source_format:"xlsx",description:`Offline Excel import · ${wb.SheetNames[0]}`};
+ return parseExcelWorkbook(buf,name||file.name.replace(/\.[^.]+$/,""));
+}
+
+function tokenizeExpression(expression:string):string[]{
+ const tokens=expression.match(/\s*(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\s*[A-Za-z_][A-Za-z0-9_]*|\s*(?:===|!==|>=|<=|==|!=|&&|\|\||\*\*|[()+\-*/%><!&|])/g)||[];
+ if(tokens.join("").replace(/\s/g,"")!==expression.replace(/\s/g,""))throw new Error("Expression has unsupported characters or syntax.");
+ return tokens.map(t=>t.trim());
+}
+function evaluateExpression(expression:string,row:any[],columns:string[]):any{
+ const tokens=tokenizeExpression(expression);let i=0;
+ const primary=():any=>{const t=tokens[i++];if(t===undefined)throw new Error("Incomplete expression.");if(t==="("){const v=or();if(tokens[i++]!==")")throw new Error("Missing closing parenthesis.");return v;}if(t==="!")return !primary();if(t==="-")return -Number(primary());if(t==="+")return Number(primary());if(/^\d/.test(t)||/^\.\d/.test(t))return Number(t);if(t.startsWith("\"")||t.startsWith("'"))return t[0]==='"'?JSON.parse(t):t.slice(1,-1).replace(/\\'/g,"'").replace(/\\\\/g,"\\");if(t.toLowerCase()==="true")return true;if(t.toLowerCase()==="false")return false;const col=columns.indexOf(t);if(col<0)throw new Error(`Unknown variable: ${t}`);const v=row[col];return v===null||v===""?NaN:v;};
+ const chain=(next:()=>any,ops:string[],apply:(a:any,op:string,b:any)=>any):any=>{let a=next();while(ops.includes(tokens[i])){const op=tokens[i++];a=apply(a,op,next());}return a;};
+ const power=()=>{const a=primary();if(tokens[i]==="**"){i++;return Number(a)**Number(power());}return a;};
+ const mult=()=>chain(power,["*","/","%"],(a,o,b)=>o==="*"?Number(a)*Number(b):o==="/"?Number(a)/Number(b):Number(a)%Number(b));
+ const add=()=>chain(mult,["+","-"],(a,o,b)=>o==="+"?Number(a)+Number(b):Number(a)-Number(b));
+ const compare=()=>chain(add,[">",">=","<","<=","==","===","!=","!=="],(a,o,b)=>{if(o==="=="||o==="===")return a===b||String(a)===String(b);if(o==="!="||o==="!==")return !(a===b||String(a)===String(b));return o===">"?Number(a)>Number(b):o===">="?Number(a)>=Number(b):o==="<"?Number(a)<Number(b):Number(a)<=Number(b);});
+ const and=()=>chain(compare,["&","&&"],(a,_o,b)=>Boolean(a)&&Boolean(b));
+ const or=()=>chain(and,["|","||"],(a,_o,b)=>Boolean(a)||Boolean(b));
+ const result=or();if(i!==tokens.length)throw new Error(`Unexpected token: ${tokens[i]}`);return result;
+}
+export function runOfflineTransform(ds:OfflineDataset,op:string,params:any={}):{dataset:OfflineDataset;message:string;duplicates?:any[][]}{
+ const next:OfflineDataset={...ds,columns:[...ds.columns],rows:ds.rows.map(r=>[...r])};
+ const colIndex=(name:string)=>{const i=next.columns.indexOf(name);if(i<0)throw new Error(`Unknown variable: ${name}`);return i;};
+ if(op==="generate"||op==="add_variable"){
+  const name=String(params.name||"").trim(),expr=String(params.expression||"").trim();if(!name||!expr)throw new Error("Enter a variable name and expression.");if(next.columns.includes(name))throw new Error(`Variable already exists: ${name}`);
+  const values=next.rows.map(row=>{const v=evaluateExpression(expr,row,next.columns);return typeof v==="number"&&!Number.isFinite(v)?null:v;});next.columns.push(name);next.rows=next.rows.map((row,i)=>[...row,values[i]]);next.n_cols=next.columns.length;
+  return {dataset:next,message:`Created ${name} from ${expr}.`};
+ }
+ if(op==="recode"){
+  const j=colIndex(params.variable),target=params.generate_as?String(params.generate_as).trim():params.variable;if(params.generate_as&&next.columns.includes(target))throw new Error(`Variable already exists: ${target}`);
+  const source=next.rows.map(r=>r[j]);const values=source.map(value=>{for(const rule of params.rules||[]){const old=String(rule.old??"").trim(),raw=String(value??"");if(!old)continue;let match=false;const range=/^(-?\d+(?:\.\d+)?)\s*\/\s*(-?\d+(?:\.\d+)?)$/.exec(old);if(range){const v=Number(value);match=Number.isFinite(v)&&v>=Number(range[1])&&v<=Number(range[2]);}else if(old.toLowerCase()==="missing")match=value===null||value==="";else match=raw===old||(Number.isFinite(Number(old))&&Number(value)===Number(old));if(match){const v=String(rule.new??"");return v===""?null:Number.isFinite(Number(v))?Number(v):v;}}return value;});
+  if(params.generate_as){next.columns.push(target);next.rows=next.rows.map((r,i)=>[...r,values[i]]);next.n_cols=next.columns.length;}else next.rows=next.rows.map((r,i)=>r.map((v,k)=>k===j?values[i]:v));
+  return {dataset:next,message:`Recoded ${params.variable}${params.generate_as?` into ${target}`:""}.`};
+ }
+ if(op==="filter"){
+  const condition=String(params.condition||"").trim();if(!condition)throw new Error("Enter a filter condition.");next.rows=next.rows.filter(r=>Boolean(evaluateExpression(condition,r,next.columns)));next.n_rows=next.rows.length;return {dataset:next,message:`Kept ${next.n_rows.toLocaleString()} matching rows.`};
+ }
+ if(op==="sort"){
+  const keys=(params.variables||[]).filter((v:string)=>next.columns.includes(v));if(!keys.length)throw new Error("Select at least one variable to sort by.");const indices=keys.map(colIndex);next.rows=next.rows.map((row,index)=>({row,index})).sort((a,b)=>{for(const j of indices){const av=a.row[j],bv=b.row[j];const cmp=av==null? (bv==null?0:1):bv==null?-1:typeof av==="number"&&typeof bv==="number"?av-bv:String(av).localeCompare(String(bv),undefined,{numeric:true,sensitivity:"base"});if(cmp)return (params.ascending===false?-1:1)*cmp;}return a.index-b.index;}).map(x=>x.row);return {dataset:next,message:`Sorted rows by ${keys.join(", ")}.`};
+ }
+ if(op==="add_row"){
+  next.rows.push(next.columns.map(()=>null));next.n_rows=next.rows.length;return {dataset:next,message:"Added an empty row."};
+ }
+ if(op==="impute_missing"){
+  const j=colIndex(params.name);const values=next.rows.map(r=>r[j]).filter(v=>v!==null&&v!==""&&Number.isFinite(Number(v))).map(Number);if(!values.length)throw new Error("Selected variable has no numeric values to impute from.");const method=params.method||"mean";const sorted=[...values].sort((a,b)=>a-b);const fill=method==="zero"?0:method==="median"?(sorted.length%2?sorted[(sorted.length-1)/2]:(sorted[sorted.length/2-1]+sorted[sorted.length/2])/2):values.reduce((a,b)=>a+b,0)/values.length;if(method!=="mean"&&method!=="median"&&method!=="zero")throw new Error("Choose mean, median, or zero imputation.");let count=0;next.rows=next.rows.map(r=>{if(r[j]===null||r[j]===""){count++;const copy=[...r];copy[j]=fill;return copy;}return r;});return {dataset:next,message:`Filled ${count} missing values in ${params.name} with ${fill}.`};
+ }
+ if(op==="dedupe"){
+  const seen=new Set<string>(),duplicates:any[][]=[];next.rows.forEach(r=>{const k=JSON.stringify(r);if(seen.has(k))duplicates.push(r);else seen.add(k);});if(params.mode==="report")return {dataset:next,message:`Found ${duplicates.length} duplicate rows.`,duplicates};next.rows=next.rows.filter((r,i)=>{const k=JSON.stringify(r);if(seen.has(k)){seen.delete(k);return true;}return false;});next.n_rows=next.rows.length;return {dataset:next,message:`Removed ${duplicates.length} duplicate rows.`};
+ }
+ if(op==="drop_missing"){
+  const j=params.variable?colIndex(params.variable):-1,before=next.rows.length;next.rows=next.rows.filter(r=>j<0?r.every(v=>v!==null&&v!==""):r[j]!==null&&r[j]!=="");next.n_rows=next.rows.length;return {dataset:next,message:`Removed ${before-next.n_rows} rows with missing values${params.variable?` in ${params.variable}`:""}.`};
+ }
+ throw new Error(`Offline data cleaning does not support ${op} yet.`);
 }
 
 export function parseDelimited(text: string, name: string, sep?: string): OfflineDataset {
@@ -277,4 +341,3 @@ export function runOffline(ds:OfflineDataset,module:string,p:any):any{
  if(module==="graph_bar"||module==="graph_histogram"||module==="graph_box"||module==="graph_scatter"){throw new Error("Charts are not available in offline mode yet. Reconnect to the analysis server to generate this graph.");}
  throw new Error(`Offline engine does not yet implement "${module}". Reconnect once to use the full server engine.`);
 }
-
