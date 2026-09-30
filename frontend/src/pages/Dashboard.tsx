@@ -140,6 +140,7 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Btn variant="ghost" onClick={() => nav("/guided-analysis")}>✦ Guided analysis</Btn>
           <input ref={fileRef} type="file" className="hidden" accept=".csv,.txt,.tsv,.xlsx,.xls,.dta,.sav,.zsav"
                  onChange={(e) => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ""; if (file) void upload(file); }} />
           <Btn variant="soft" onClick={() => setPasteOpen(true)}>📋 Paste data</Btn>
