@@ -23,18 +23,19 @@ export default function Dashboard() {
     setProgress(0);
     const ext = /\.([^.]+)$/.exec(f.name)?.[1]?.toLowerCase() || "";
     try {
-      let importedDataset: any = null;
+      let importedDatasets: any[] = [];
       const name = f.name.replace(/\.[^.]+$/, "");
 
       // APK/offline-first import: never depend on the server for local files.
       if (ext === "xlsx" || ext === "xls") {
-        importedDataset = await parseExcelFile(f, name, setProgress);
-        await saveOfflineDataset(importedDataset);
+        importedDatasets = await parseExcelFile(f, name, setProgress);
+        for (const dataset of importedDatasets) await saveOfflineDataset(dataset);
       } else if (ext === "csv" || ext === "txt" || ext === "tsv") {
         const text = await f.text();
         setProgress(100);
-        importedDataset = parseDelimited(text, name);
-        await saveOfflineDataset(importedDataset);
+        const dataset = parseDelimited(text, name);
+        importedDatasets = [dataset];
+        await saveOfflineDataset(dataset);
       } else if (ext === "dta" || ext === "sav" || ext === "zsav") {
         const form = new FormData();
         form.append("file", f);
@@ -48,7 +49,7 @@ export default function Dashboard() {
       }
 
       await refreshDatasets();
-      if (importedDataset) setActiveDataset(importedDataset);
+      if (importedDatasets.length) setActiveDataset(importedDatasets[0]);
       setProgress(100);
     } catch (e: any) {
       const message = String(e?.message || "Import failed.");
