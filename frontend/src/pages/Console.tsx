@@ -20,10 +20,11 @@ export default function Console() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    api<string[]>("/api/commands/history?limit=25")
-      .then(setHistory)
-      .catch(() => {});
-  }, [activeDataset?.id]);
+    const key = `statmedx_command_history_${activeDataset?.id}`;
+    try { const stored=JSON.parse(localStorage.getItem(key)||"[]"); if(Array.isArray(stored))setHistory(stored); } catch {}
+    if(activeDataset?.id>0) api<string[]>(`/api/commands/history?dataset_id=${activeDataset.id}&limit=25`).then(setHistory).catch(()=>{});
+    else if(activeDataset?.remote_dataset_id) api<string[]>(`/api/commands/history?dataset_id=${activeDataset.remote_dataset_id}&limit=25`).then(setHistory).catch(()=>{});
+  }, [activeDataset?.id, activeDataset?.remote_dataset_id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -38,7 +39,7 @@ export default function Console() {
       return;
     }
     setInput("");
-    setHistory((h) => [cmd, ...h.filter((c) => c !== cmd)].slice(0, 50));
+    setHistory((h) => { const next=[cmd, ...h.filter((c) => c !== cmd)].slice(0,50);try{localStorage.setItem(`statmedx_command_history_${activeDataset.id}`,JSON.stringify(next));}catch{}return next; });
     setHIdx(-1);
     setEntries((e) => [...e, { cmd, result: null }]);
     setBusy(true);
