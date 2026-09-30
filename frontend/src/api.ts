@@ -56,3 +56,22 @@ export function downloadUrl(path: string): string {
   const token = getToken() || "";
   return `${API_BASE}${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
 }
+
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(`${API_BASE}${path}`, { headers });
+  if (response.status === 401) {
+    clearAuth();
+    window.location.hash = "#/login";
+    throw new Error("Session expired — please log in again");
+  }
+  if (!response.ok) throw new Error(`Download failed (${response.status})`);
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url; link.download = filename; link.style.display = "none";
+  document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
