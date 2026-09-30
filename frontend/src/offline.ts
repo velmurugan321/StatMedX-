@@ -61,6 +61,24 @@ export async function deleteOfflineDataset(id: number): Promise<void> {
 function newLocalId() { return -(Date.now() * 1000 + Math.floor(Math.random() * 1000)); }
 
 export type OfflineResult = { id: number; dataset_id: number; module: string; title: string; result: any; created_at: string };
+
+export function assessDataQuality(columns:string[],rows:any[][]){
+ const missingValue=(v:any)=>v===null||v===undefined||v===""||(typeof v==="number"&&!Number.isFinite(v));
+ const variables=columns.map((name,j)=>{
+  const values=rows.map(r=>r[j]).filter(v=>!missingValue(v));
+  const types=new Set(values.map(v=>typeof v==="number"?"numeric":typeof v==="boolean"?"boolean":v instanceof Date?"date":"text"));
+  const numeric=values.filter(v=>typeof v==="number"&&Number.isFinite(v)).map(Number).sort((a,b)=>a-b);
+  const quantile=(p:number)=>{if(!numeric.length)return NaN;const at=(numeric.length-1)*p,lo=Math.floor(at),f=at-lo;return numeric[lo]+f*((numeric[lo+1]??numeric[lo])-numeric[lo]);};
+  const q1=quantile(.25),q3=quantile(.75),iqr=q3-q1;
+  const outliers=numeric.filter(v=>v<q1-1.5*iqr||v>q3+1.5*iqr).length;
+  const missing=rows.length-values.length;
+  return {name,missing,missingPercent:rows.length?missing*100/rows.length:0,unique:new Set(values.map(v=>String(v))).size,outliers,mixedTypes:types.size>1,constant:values.length>0&&new Set(values.map(v=>String(v))).size===1};
+ });
+ const seen=new Set<string>();let duplicateRows=0;
+ rows.forEach(row=>{const key=JSON.stringify(row);if(seen.has(key))duplicateRows++;else seen.add(key);});
+ return {rowCount:rows.length,columnCount:columns.length,missingCells:variables.reduce((sum,v)=>sum+v.missing,0),duplicateRows,variables};
+}
+
 export async function saveOfflineResult(value: Omit<OfflineResult, "id" | "created_at">): Promise<OfflineResult> {
   const db = await openDb();
   const item: OfflineResult = { ...value, id: -(Date.now() * 1000 + Math.floor(Math.random() * 1000)), created_at: new Date().toISOString() };
