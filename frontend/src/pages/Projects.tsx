@@ -35,7 +35,7 @@ export default function Projects(){
   try{
    const dataset=cloneOfflineDataset(project.dataset,project.dataset.name);
    await saveOfflineDataset(dataset);
-   for(const result of project.results||[])await saveOfflineResult({dataset_id:dataset.id,module:result.module||"analysis",title:result.title||"Saved result",result:result.result||result});
+   for(const result of project.results||[])await saveOfflineResult({dataset_id:dataset.id,module:result.module||result.request?.module||"analysis",title:result.title||"Saved result",result:result.result||result});
    try{localStorage.setItem(`statmedx_command_history_${dataset.id}`,JSON.stringify(project.commands||[]));}catch{}
    await refreshDatasets();setActiveDataset(dataset);nav("/results");
   }catch(e:any){setError(e.message||"Could not open the saved project.");}
