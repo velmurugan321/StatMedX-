@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { api } from "../api";
+import { api, downloadFile } from "../api";
 import { useApp } from "../state";
 import ResultsView from "../components/ResultsView";
 import { Btn, Spinner } from "../components/ui";
+import { getOfflineResult, listOfflineResults } from "../offline";
+import * as XLSX from "xlsx";
 
 export default function Results() {
   const { activeDataset } = useApp();
@@ -13,23 +15,59 @@ export default function Results() {
   const loadList = useCallback(async () => {
     setLoading(true);
     try {
+      if (activeDataset?.id < 0) {
+        const local = await listOfflineResults(activeDataset.id);
+        setList(local);
+        setSelected(local[0] ?? null);
+        return;
+      }
       const q = activeDataset ? `?dataset_id=${activeDataset.id}` : "";
       const l = await api<any[]>(`/api/results${q}`);
       const safeList = Array.isArray(l) ? l : [];
       setList(safeList);
-      if (safeList.length && !selected) openResult(safeList[0].id);
+      if (!safeList.length) setSelected(null);
+      else if (!safeList.some((item: any) => item.id === selected?.id)) await openResult(safeList[0].id);
+    } catch {
+      const local = await listOfflineResults(activeDataset?.id);
+      setList(local);
+      setSelected(local[0] ?? null);
     } finally {
       setLoading(false);
     }
-  }, [activeDataset?.id]);
+  }, [activeDataset?.id, selected?.id]);
 
   useEffect(() => {
     loadList();
   }, [loadList]);
 
   const openResult = async (id: number) => {
+    if (id < 0) {
+      setSelected(await getOfflineResult(id));
+      return;
+    }
     const r = await api<any>(`/api/results/${id}`);
     setSelected(r);
+  };
+
+  const exportOffline = (format: "csv" | "excel") => {
+    if (!selected || selected.id >= 0) return;
+    const rows: any[][] = [];
+    for (const b of (Array.isArray(selected.result?.blocks) ? selected.result.blocks : [])) {
+      if (b.type === "table") {
+        rows.push([b.name || "Results"]);
+        rows.push((Array.isArray(b.columns) ? b.columns : []).map((c: any) => c?.label ?? c?.key ?? ""));
+        rows.push(...(Array.isArray(b.rows) ? b.rows : [])); rows.push([]);
+      } else if (b.type === "text") rows.push([String(b.content || "").replace(/<[^>]+>/g, "")]);
+    }
+    let blob: Blob;
+    if (format === "excel") {
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows.length ? rows : [[selected.title]]), "Results");
+      blob = new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    } else {
+      const esc = (v: any) => { const s = v == null ? "" : String(v); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+      blob = new Blob(["\uFEFF", rows.map(r => r.map(esc).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+    }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `${selected.module}-results.${format === "excel" ? "xlsx" : "csv"}`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
 
   const copyTables = async () => {
@@ -63,14 +101,16 @@ export default function Results() {
         {selected && (
           <div className="flex flex-wrap gap-1.5">
             <Btn variant="ghost" onClick={copyTables}>⧉ Copy</Btn>
-            <a className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50"
-               href={`/api/results/${selected.id}/export?format=excel`} target="_blank">⬇ Excel</a>
-            <a className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50"
-               href={`/api/results/${selected.id}/export?format=csv`} target="_blank">⬇ CSV</a>
-            <a className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50"
-               href={`/api/results/${selected.id}/export?format=docx`} target="_blank">⬇ Word</a>
-            <a className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50"
-               href={`/api/results/${selected.id}/export?format=pdf`} target="_blank">🖨 PDF</a>
+            {selected.id < 0 ? <>
+              <Btn variant="ghost" onClick={() => exportOffline("excel")}>⬇ Excel</Btn>
+              <Btn variant="ghost" onClick={() => exportOffline("csv")}>⬇ CSV</Btn>
+              <Btn variant="ghost" onClick={() => window.print()}>🖨 Print / PDF</Btn>
+            </> : <>
+              <Btn variant="ghost" onClick={() => downloadFile(`/api/results/${selected.id}/export?format=excel`, `${selected.module}-results.xlsx`)}>⬇ Excel</Btn>
+              <Btn variant="ghost" onClick={() => downloadFile(`/api/results/${selected.id}/export?format=csv`, `${selected.module}-results.csv`)}>⬇ CSV</Btn>
+              <Btn variant="ghost" onClick={() => downloadFile(`/api/results/${selected.id}/export?format=docx`, `${selected.module}-results.docx`)}>⬇ Word</Btn>
+              <Btn variant="ghost" onClick={() => downloadFile(`/api/results/${selected.id}/export?format=pdf`, `${selected.module}-results.pdf`)}>🖨 PDF</Btn>
+            </>}
           </div>
         )}
       </div>
@@ -109,3 +149,4 @@ export default function Results() {
     </div>
   );
 }
+

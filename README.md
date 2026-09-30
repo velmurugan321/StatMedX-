@@ -38,6 +38,20 @@ cd backend && .venv/bin/pytest app/tests -v
 WebR/WASM, run on sleep/mtcars/InsectSprays/airquality) and official Stata
 documented-output anchors — see `docs/VALIDATION.md` and `crossval/`.
 
+## Android APK
+
+The Android build is offline-first. It supports local CSV/TXT/TSV and Excel
+imports, cell editing, row deletion, local result history, and selected
+browser-side analyses. Server-only analyses show
+an explicit message while offline. Stata/SPSS imports and the full analysis
+catalog need a FastAPI server.
+
+To enable server features in an APK build, set the repository Actions variable
+`STATMEDX_API_URL` to the HTTPS base URL of the deployed FastAPI service. The
+Android workflow passes this as `VITE_API_URL`; leaving it unset keeps the app
+in offline mode. Pull requests build the APK and run the backend validation
+suite.
+
 ## Architecture
 
 ```
@@ -89,3 +103,4 @@ frontend/
   refuses to start without it); in dev a random ephemeral secret is generated
   per process (sessions reset on restart).
 - Data files are pickled DataFrames under `backend/data/` (gitignored).
+

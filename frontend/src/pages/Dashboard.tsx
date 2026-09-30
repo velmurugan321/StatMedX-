@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { parseDelimited, parseExcelFile, parseStatFile, saveOfflineDataset } from "../offline";
+import { deleteOfflineDataset, parseDelimited, parseExcelFile, saveOfflineDataset } from "../offline";
 import { useApp } from "../state";
 import { Btn, ErrorNote, inputCls } from "../components/ui";
 
@@ -20,28 +20,40 @@ export default function Dashboard() {
     setErr(null);
     setBusy(true);
     setProgress(0);
+    const ext = /\.([^.]+)$/.exec(f.name)?.[1]?.toLowerCase() || "";
     try {
+      let importedDataset: any = null;
       const name = f.name.replace(/\.[^.]+$/, "");
-      const ext = /\.([^.]+)$/.exec(f.name)?.[1]?.toLowerCase() || "";
 
       // APK/offline-first import: never depend on the server for local files.
       if (ext === "xlsx" || ext === "xls") {
-        const ds = await parseExcelFile(f, name, setProgress);
-        await saveOfflineDataset(ds);
+        importedDataset = await parseExcelFile(f, name, setProgress);
+        await saveOfflineDataset(importedDataset);
       } else if (ext === "csv" || ext === "txt" || ext === "tsv") {
         const text = await f.text();
         setProgress(100);
-        await saveOfflineDataset(parseDelimited(text, name));
+        importedDataset = parseDelimited(text, name);
+        await saveOfflineDataset(importedDataset);
       } else if (ext === "dta" || ext === "sav" || ext === "zsav") {
-        throw new Error("Offline import for Stata/SPSS is not available yet. Export the file to CSV or Excel and import it.");
+        const form = new FormData();
+        form.append("file", f);
+        form.append("name", name);
+        const uploaded = await api<any>("/api/datasets/upload", { method: "POST", body: form });
+        await refreshDatasets();
+        setActiveDataset(uploaded);
+        setProgress(100);
       } else {
         throw new Error("Unsupported file format. Use CSV, TXT, TSV, XLSX or XLS.");
       }
 
       await refreshDatasets();
+      if (importedDataset) setActiveDataset(importedDataset);
       setProgress(100);
     } catch (e: any) {
-      setErr(e?.message || "Import failed.");
+      const message = String(e?.message || "Import failed.");
+      setErr((ext === "dta" || ext === "sav" || ext === "zsav") && /fetch|network/i.test(message)
+        ? "Stata/SPSS import needs a reachable FastAPI server. Configure STATMEDX_API_URL for the Android build, or convert the file to CSV/Excel."
+        : message);
     } finally {
       setBusy(false);
     }
@@ -71,7 +83,8 @@ export default function Dashboard() {
 
   const del = async (id: number) => {
     if (!confirm("Delete this dataset and its results?")) return;
-    await api(`/api/datasets/${id}`, { method: "DELETE" });
+    if (id < 0) await deleteOfflineDataset(id);
+    else await api(`/api/datasets/${id}`, { method: "DELETE" });
     if (activeDataset?.id === id) setActiveDataset(null);
     await refreshDatasets();
   };
@@ -89,7 +102,7 @@ export default function Dashboard() {
         </div>
         <div className="flex gap-2">
           <input ref={fileRef} type="file" className="hidden" accept=".csv,.txt,.tsv,.xlsx,.xls,.dta,.sav,.zsav"
-                 onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+                 onChange={(e) => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ""; if (file) void upload(file); }} />
           <Btn variant="soft" onClick={() => setPasteOpen(true)}>📋 Paste data</Btn>
           <Btn onClick={() => fileRef.current?.click()} disabled={busy}>
             {busy ? `Importing… ${progress}%` : "⬆ Import dataset"}
@@ -111,7 +124,7 @@ export default function Dashboard() {
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 text-[13px] text-slate-600">
         <span className="font-bold text-slate-800">Supported formats:</span>{" "}
-        CSV · TXT/TSV · Excel (.xlsx) · Stata (.dta) · SPSS (.sav) — all supported offline.
+        Offline: CSV · TXT/TSV · Excel (.xlsx). Stata (.dta) and SPSS (.sav) require a configured server connection.
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -172,3 +185,4 @@ export default function Dashboard() {
     </div>
   );
 }
+

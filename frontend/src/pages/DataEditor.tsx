@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { api } from "../api";
+import { api, downloadUrl } from "../api";
 import { useApp } from "../state";
 import { Btn, ErrorNote, Labeled, Modal, Spinner, inputCls } from "../components/ui";
+import { deleteOfflineRow, getOfflineDataset, offlineSchema, updateOfflineCell } from "../offline";
+import * as XLSX from "xlsx";
 
 interface TransformDialog {
   op: string;
@@ -29,6 +31,15 @@ export default function DataEditor() {
     if (!dsid) return;
     setBusy(true);
     try {
+      if (dsid < 0) {
+        const ds = await getOfflineDataset(dsid);
+        if (!ds) throw new Error("Offline dataset not found.");
+        const schema = offlineSchema(ds);
+        setData({ columns: schema.columns.map((c: any) => ({ name: c.name, type: c.type })), rows: ds.rows.slice((page - 1) * pageSize, page * pageSize), row_start: (page - 1) * pageSize, total: ds.rows.length });
+        setSchema(schema);
+        setErr(null);
+        return;
+      }
       const d = await api(`/api/datasets/${dsid}/data?page=${page}&size=${pageSize}`);
       setData(d);
       setSchema(await api(`/api/datasets/${dsid}/schema`));
@@ -55,6 +66,7 @@ export default function DataEditor() {
     setMsg(null);
     setBusy(true);
     try {
+      if (dsid! < 0) throw new Error("This transform needs the online analysis server. Offline cell editing, row deletion and export are available.");
       const res = await api(`/api/datasets/${dsid}/transform`, {
         method: "POST",
         body: JSON.stringify({ op, params }),
@@ -75,6 +87,14 @@ export default function DataEditor() {
   const saveCell = async () => {
     if (!editing) return;
     try {
+      if (dsid! < 0) {
+        await updateOfflineCell(dsid!, editing.r, editing.c, editing.v);
+        setEditing(null);
+        await load();
+        bumpData();
+        refreshDatasets();
+        return;
+      }
       await api(`/api/datasets/${dsid}/cell`, {
         method: "POST",
         body: JSON.stringify({ row: editing.r, column: editing.c, value: editing.v === "" ? null : editing.v }),
@@ -269,21 +289,24 @@ export default function DataEditor() {
 
       <ErrorNote msg={err} />
       {msg && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{msg}</div>}
+      {dsid < 0 && <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">Offline editor: double-tap a cell to change it, tap ✕ to delete a row, or export CSV/Excel. Transform tools need the analysis server.</div>}
 
       {view === "data" ? (
         <>
           {/* toolbar */}
           <div className="flex flex-wrap gap-1.5">
-            <Btn variant="soft" onClick={openGenerate}>ƒ Generate</Btn>
-            <Btn variant="soft" onClick={openRecode}>↺ Recode</Btn>
-            <Btn variant="soft" onClick={openFilter}>⧨ Filter</Btn>
-            <Btn variant="soft" onClick={openSort}>⇅ Sort</Btn>
-            <Btn variant="soft" onClick={() => runTransform("add_variable", { name: prompt("Variable name?") })}>+ Variable</Btn>
-            <Btn variant="soft" onClick={() => runTransform("add_row", {})}>+ Case</Btn>
-            <Btn variant="soft" onClick={openMissing}>◌ Missing data</Btn>
-            <Btn variant="soft" onClick={openDuplicates}>⧉ Duplicates</Btn>
-            <Btn variant="ghost" onClick={() => exportDataset(dsid!)}>⬇ Export CSV</Btn>
-            <Btn variant="ghost" onClick={() => exportDataset(dsid!, "excel")}>⬇ Excel</Btn>
+            {dsid > 0 && <>
+              <Btn variant="soft" onClick={openGenerate}>ƒ Generate</Btn>
+              <Btn variant="soft" onClick={openRecode}>↺ Recode</Btn>
+              <Btn variant="soft" onClick={openFilter}>⧨ Filter</Btn>
+              <Btn variant="soft" onClick={openSort}>⇅ Sort</Btn>
+              <Btn variant="soft" onClick={() => runTransform("add_variable", { name: prompt("Variable name?") })}>+ Variable</Btn>
+              <Btn variant="soft" onClick={() => runTransform("add_row", {})}>+ Case</Btn>
+              <Btn variant="soft" onClick={openMissing}>◌ Missing data</Btn>
+              <Btn variant="soft" onClick={openDuplicates}>⧉ Duplicates</Btn>
+            </>}
+            <Btn variant="ghost" onClick={() => exportDataset(dsid!).catch((e: any) => setErr(e.message))}>⬇ Export CSV</Btn>
+            <Btn variant="ghost" onClick={() => exportDataset(dsid!, "excel").catch((e: any) => setErr(e.message))}>⬇ Excel</Btn>
           </div>
 
           {/* grid */}
@@ -337,7 +360,7 @@ export default function DataEditor() {
                         <button
                           className="px-1 text-[11px] text-slate-300 opacity-0 hover:text-red-500 group-hover:opacity-100"
                           title="Delete case"
-                          onClick={() => runTransform("delete_rows", { indices: [data.row_start + ri] })}
+                          onClick={() => dsid! < 0 ? deleteOfflineRow(dsid!, data.row_start + ri).then(() => { load(); bumpData(); refreshDatasets(); }).catch((e: any) => setErr(e.message)) : runTransform("delete_rows", { indices: [data.row_start + ri] })}
                         >✕</button>
                       </td>
                     </tr>
@@ -374,16 +397,14 @@ export default function DataEditor() {
                   <td>{i + 1}</td>
                   <td className="font-semibold">{c.name}</td>
                   <td>{c.numeric ? "numeric" : "string"}</td>
-                  <td>
-                    <VariableLabel dsid={dsid} name={c.name} />
-                  </td>
+                  <td>{dsid < 0 ? <span className="text-slate-400">Offline</span> : <VariableLabel dsid={dsid} name={c.name} />}</td>
                   <td>{c.numeric ? (c.n_unique <= 6 ? "yes (few levels)" : "—") : "yes"}</td>
                   <td>{c.n_unique}</td>
                   <td>
-                    <button className="text-[11px] text-slate-400 hover:text-red-500"
+                    {dsid > 0 && <button className="text-[11px] text-slate-400 hover:text-red-500"
                             onClick={() => confirm(`Delete variable ${c.name}?`) && runTransform("delete_variable", { name: c.name })}>
                       ✕
-                    </button>
+                    </button>}
                   </td>
                 </tr>
               ))}
@@ -411,7 +432,22 @@ export default function DataEditor() {
 }
 
 async function exportDataset(dsid: number, format: "csv" | "excel" = "csv") {
-  const res = await fetch(`/api/datasets/${dsid}/transform`, {
+  if (dsid < 0) {
+    const ds = await getOfflineDataset(dsid);
+    if (!ds) throw new Error("Offline dataset not found.");
+    let blob: Blob;
+    if (format === "excel") {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([ds.columns, ...ds.rows]), "Data");
+      blob = new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    } else {
+      const esc = (v: any) => { const s = v == null ? "" : String(v); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+      blob = new Blob(["\uFEFF", [ds.columns, ...ds.rows].map(r => r.map(esc).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+    }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `${ds.name}.${format === "excel" ? "xlsx" : "csv"}`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    return;
+  }
+  const res = await fetch(downloadUrl(`/api/datasets/${dsid}/transform`), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -452,3 +488,4 @@ function VariableLabel({ dsid, name }: { dsid: number; name: string }) {
     />
   );
 }
+
