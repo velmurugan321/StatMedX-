@@ -21,7 +21,7 @@ function NavItem({ to, icon, label, onClick }: { to: string; icon: string; label
 }
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  const { user, logout, datasets, activeDataset, setActiveDataset } = useApp();
+  const { user, logout, datasets, activeDataset, setActiveDataset, undo, redo, canUndo, canRedo } = useApp();
   const [openGroup, setOpenGroup] = useState<string | null>("03 · Descriptive");
   const [mobileOpen, setMobileOpen] = useState(false);
   const nav = useNavigate();
@@ -133,14 +133,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <main className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-6xl px-4 py-5 lg:px-8 lg:py-7">
             <div className="mb-4">
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-900"
-                onClick={() => window.history.state?.idx > 0 ? nav(-1) : nav("/")}
-                aria-label="Go back to the previous page"
-              >
-                ← Back{location.pathname === "/" ? " to app" : ""}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-900"
+                  onClick={() => window.history.state?.idx > 0 ? nav(-1) : nav("/")}
+                  aria-label="Go back to the previous page"
+                >
+                  ← Back{location.pathname === "/" ? " to app" : ""}
+                </button>
+                <button type="button" disabled={!canUndo} onClick={() => void undo().catch(e => window.alert(e.message))}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" title="Undo the last data change">
+                  ↶ Undo
+                </button>
+                <button type="button" disabled={!canRedo} onClick={() => void redo().catch(e => window.alert(e.message))}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" title="Redo the last undone data change">
+                  ↷ Redo
+                </button>
+              </div>
             </div>
             {children}
           </div>
