@@ -11,7 +11,7 @@ interface Entry {
 }
 
 export default function Console() {
-  const { activeDataset, setActiveDataset, bumpData } = useApp();
+  const { activeDataset, setActiveDataset, bumpData, captureDataset, recordUndo } = useApp();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<string[]>([]);
@@ -43,6 +43,8 @@ export default function Console() {
     setEntries((e) => [...e, { cmd, result: null }]);
     setBusy(true);
     try {
+      const mutating = /^(generate|gen|recode|replace|drop|keep|sort|rename|duplicates\s+drop)\b/i.test(cmd);
+      const before = mutating ? await captureDataset(activeDataset) : null;
       if (activeDataset.id < 0) {
         const ds = await getOfflineDataset(activeDataset.id);
         if (!ds) throw new Error("The selected offline dataset could not be loaded. Reopen it from Dashboard.");
@@ -85,6 +87,7 @@ export default function Console() {
           await saveOfflineDataset(synced);
           setActiveDataset(synced);
           setEntries((e) => { const copy = [...e]; copy[copy.length - 1] = { cmd, result: response.result }; return copy; });
+          if (before) recordUndo(before);
           bumpData();
           setBusy(false);
           return;
@@ -161,7 +164,7 @@ export default function Console() {
           throw new Error(`“${command}” needs the connected analysis server. Type help to see commands available offline.`);
         }
         setEntries((e) => { const copy = [...e]; copy[copy.length - 1] = { cmd, result }; return copy; });
-        if (changed) bumpData();
+        if (changed) { if (before) recordUndo(before); bumpData(); }
         setBusy(false);
         return;
       }
@@ -174,6 +177,7 @@ export default function Console() {
         copy[copy.length - 1] = { cmd, result: res.result };
         return copy;
       });
+      if (before) recordUndo(before);
       if (/^(generate|gen|recode|replace|drop|keep|sort|rename|clear)\b/.test(cmd)) bumpData();
     } catch (e: any) {
       setEntries((e2) => {
