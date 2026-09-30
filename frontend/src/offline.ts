@@ -9,13 +9,15 @@ export type OfflineDataset = {
 const DB = "statmedx-offline";
 const STORE = "datasets";
 const RESULTS = "results";
+const PROJECTS = "projects";
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const r = indexedDB.open(DB, 2);
+    const r = indexedDB.open(DB, 3);
     r.onupgradeneeded = () => {
       if (!r.result.objectStoreNames.contains(STORE)) r.result.createObjectStore(STORE, { keyPath: "id" });
       if (!r.result.objectStoreNames.contains(RESULTS)) r.result.createObjectStore(RESULTS, { keyPath: "id" });
+      if (!r.result.objectStoreNames.contains(PROJECTS)) r.result.createObjectStore(PROJECTS, { keyPath: "id" });
     };
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
@@ -59,6 +61,15 @@ export async function deleteOfflineDataset(id: number): Promise<void> {
 }
 
 function newLocalId() { return -(Date.now() * 1000 + Math.floor(Math.random() * 1000)); }
+
+export type SavedProject={id:number;name:string;created_at:string;dataset:OfflineDataset;commands:string[];results:any[]};
+export function cloneOfflineDataset(ds:OfflineDataset,name=ds.name):OfflineDataset{return {...JSON.parse(JSON.stringify(ds)),id:newLocalId(),name,remote_dataset_id:undefined};}
+export async function saveAnalysisProject(value:Omit<SavedProject,"id"|"created_at">):Promise<SavedProject>{
+ const db=await openDb();const project:SavedProject={...value,id:newLocalId(),created_at:new Date().toISOString()};
+ await new Promise<void>((resolve,reject)=>{const req=db.transaction(PROJECTS,"readwrite").objectStore(PROJECTS).put(project);req.onsuccess=()=>resolve();req.onerror=()=>reject(req.error);});db.close();return project;
+}
+export async function listAnalysisProjects():Promise<SavedProject[]>{const db=await openDb();const items=await new Promise<SavedProject[]>((resolve,reject)=>{const req=db.transaction(PROJECTS).objectStore(PROJECTS).getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error);});db.close();return items.sort((a,b)=>b.created_at.localeCompare(a.created_at));}
+export async function deleteAnalysisProject(id:number):Promise<void>{const db=await openDb();await new Promise<void>((resolve,reject)=>{const req=db.transaction(PROJECTS,"readwrite").objectStore(PROJECTS).delete(id);req.onsuccess=()=>resolve();req.onerror=()=>reject(req.error);});db.close();}
 
 export type OfflineResult = { id: number; dataset_id: number; module: string; title: string; result: any; created_at: string };
 
