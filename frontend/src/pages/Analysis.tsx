@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { getOfflineDataset, offlineSchema, runOffline, saveOfflineResult } from "../offline";
 import * as XLSX from "xlsx";
@@ -10,6 +10,8 @@ import { Btn, ErrorNote, Labeled, Spinner, inputCls } from "../components/ui";
 
 export default function Analysis() {
   const { moduleId } = useParams();
+  const [searchParams] = useSearchParams();
+  const prefill = searchParams.toString();
   const mod = MODULES.find((m) => m.id === moduleId) || MODULES[0];
   const { activeDataset, dataVersion } = useApp();
   const [schema, setSchema] = useState<any | null>(null);
@@ -22,7 +24,14 @@ export default function Analysis() {
     setValues({});
     setResult(null);
     setErr(null);
-  }, [mod.id]);
+    const query = new URLSearchParams(prefill);
+    const initial:Record<string,any>={};
+    for(const field of mod.fields){
+      const value=query.get(field.key);if(value===null)continue;
+      initial[field.key]=field.kind==="vars"?value.split("|").filter(Boolean):field.kind==="number"?Number(value):field.kind==="checkbox"?value==="true":value;
+    }
+    setValues(initial);
+  }, [mod.id, prefill]);
 
   useEffect(() => {
     if (!activeDataset) return setSchema(null);
