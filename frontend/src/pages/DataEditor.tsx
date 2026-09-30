@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, downloadUrl } from "../api";
 import { useApp } from "../state";
 import { Btn, ErrorNote, Labeled, Modal, Spinner, inputCls } from "../components/ui";
-import { deleteOfflineRow, getOfflineDataset, offlineSchema, runOfflineTransform, saveOfflineDataset, updateOfflineCell } from "../offline";
+import { assessDataQuality, deleteOfflineRow, getOfflineDataset, offlineSchema, runOfflineTransform, saveOfflineDataset, updateOfflineCell } from "../offline";
 import * as XLSX from "xlsx";
 
 interface TransformDialog {
@@ -23,9 +23,13 @@ export default function DataEditor() {
   const [dlg, setDlg] = useState<TransformDialog | null>(null);
   const [schema, setSchema] = useState<any | null>(null);
   const [view, setView] = useState<"data" | "variables">("data");
+  const [qualityReport, setQualityReport] = useState<any|null>(null);
+  const [qualityBusy, setQualityBusy] = useState(false);
 
   const pageSize = 50;
   const dsid = activeDataset?.id;
+
+  useEffect(() => { setQualityReport(null); }, [activeDataset?.id, dataVersion]);
 
   const load = useCallback(async () => {
     if (!dsid) return;
@@ -152,6 +156,16 @@ export default function DataEditor() {
         await runTransform("delete_rows", { indices: [index] });
       }
     } catch (e:any) { setErr(e.message); }
+  };
+
+  const createQualityReport = async () => {
+    if (!activeDataset) return;
+    setQualityBusy(true); setErr(null);
+    try {
+      const snapshot = await captureDataset(activeDataset);
+      setQualityReport(assessDataQuality(snapshot.columns, snapshot.rows));
+    } catch (e:any) { setErr(e.message || "Could not create the data quality report."); }
+    finally { setQualityBusy(false); }
   };
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
@@ -340,6 +354,33 @@ export default function DataEditor() {
           ))}
         </div>
       </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Btn variant="soft" onClick={() => void createQualityReport()} disabled={qualityBusy}>
+          {qualityBusy ? "Checking data…" : "▤ Data quality report"}
+        </Btn>
+        {qualityReport && <span className="text-xs text-slate-500">Report covers all {qualityReport.rowCount.toLocaleString()} rows.</span>}
+      </div>
+
+      {qualityReport && (
+        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+          <div className="flex items-center justify-between gap-2">
+            <div><h2 className="font-bold text-slate-800">Data quality</h2><p className="text-xs text-slate-500">Review these flags before analysis; they do not change your data.</p></div>
+            <button className="rounded px-2 py-1 text-sm text-slate-500 hover:bg-slate-100" onClick={() => setQualityReport(null)} aria-label="Close data quality report">✕</button>
+          </div>
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+            {[["Missing cells",qualityReport.missingCells],["Duplicate rows",qualityReport.duplicateRows],["Variables",qualityReport.columnCount],["Observations",qualityReport.rowCount]].map(([label,value]:any)=>(
+              <div key={label} className="rounded-lg bg-slate-50 p-3"><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div><div className="mt-1 text-lg font-bold text-slate-800">{Number(value).toLocaleString()}</div></div>
+            ))}
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="smx-table"><thead><tr><th>Variable</th><th>Missing</th><th>Missing %</th><th>Distinct</th><th>IQR outliers</th><th>Flags</th></tr></thead>
+              <tbody>{qualityReport.variables.map((v:any)=><tr key={v.name}><td className="font-medium">{v.name}</td><td>{v.missing}</td><td>{v.missingPercent.toFixed(1)}%</td><td>{v.unique}</td><td>{v.outliers}</td><td>{[v.mixedTypes&&"mixed types",v.constant&&"constant"].filter(Boolean).join(", ")||"—"}</td></tr>)}</tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-slate-400">Outliers use the 1.5×IQR rule on numeric values. Duplicate count reports extra copies of identical rows.</p>
+        </section>
+      )}
 
       <ErrorNote msg={err} />
       {msg && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{msg}</div>}
