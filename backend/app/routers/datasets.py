@@ -169,6 +169,27 @@ class CellEdit(BaseModel):
     value: str | float | int | None
 
 
+class DatasetReplace(BaseModel):
+    columns: list[str]
+    rows: list[list[object]]
+
+
+@router.put("/{dsid}/data")
+def replace_dataset_data(dsid: int, body: DatasetReplace,
+                         db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Replace dataset contents from a locally edited offline dataset."""
+    ds = _own(db, user, dsid)
+    if not body.columns or any(len(row) != len(body.columns) for row in body.rows):
+        raise HTTPException(400, "Dataset columns and rows do not match")
+    df = pd.DataFrame(body.rows, columns=body.columns)
+    preserve = {v.name: v for v in ds.variables}
+    dataio.save_df(ds.id, df)
+    ds.n_rows, ds.n_cols = len(df), len(df.columns)
+    dataio.sync_variables(db, ds, df, preserve=preserve)
+    db.commit()
+    return _out(ds)
+
+
 @router.post("/{dsid}/cell")
 def edit_cell(dsid: int, body: CellEdit, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     ds = _own(db, user, dsid)
