@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useApp } from "../state";
 import { GROUPS, MODULES } from "../modules";
 
@@ -25,6 +25,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [openGroup, setOpenGroup] = useState<string | null>("03 · Descriptive");
   const [mobileOpen, setMobileOpen] = useState(false);
   const nav = useNavigate();
+  const location = useLocation();
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-slate-100">
@@ -97,6 +98,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="border-t border-white/10 px-4 py-3">
+          <div className="mb-3 border-b border-white/10 pb-3 text-[11px] text-slate-300">
+            <div className="font-bold text-white">VELMURUGAN</div>
+            <div>Statistician</div>
+            <a className="mt-1 inline-block text-sky-300 hover:text-sky-200" href="mailto:velmurugan.stat@gmail.com">
+              velmurugan.stat@gmail.com
+            </a>
+          </div>
           <div className="mb-1.5 truncate text-[12px] font-semibold text-slate-300">
             {user?.name || user?.email}
           </div>
@@ -123,7 +131,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <span className="font-extrabold text-slate-800">StatMedX</span>
         </header>
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-6xl px-4 py-5 lg:px-8 lg:py-7">{children}</div>
+          <div className="mx-auto max-w-6xl px-4 py-5 lg:px-8 lg:py-7">
+            <div className="mb-4">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-900"
+                onClick={() => window.history.state?.idx > 0 ? nav(-1) : nav("/")}
+                aria-label="Go back to the previous page"
+              >
+                ← Back{location.pathname === "/" ? " to app" : ""}
+              </button>
+            </div>
+            {children}
+          </div>
         </main>
       </div>
     </div>
