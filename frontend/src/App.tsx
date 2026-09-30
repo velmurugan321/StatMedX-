@@ -10,6 +10,7 @@ import Console from "./pages/Console";
 import DoFile from "./pages/DoFile";
 import Results from "./pages/Results";
 import Projects from "./pages/Projects";
+import GuidedAnalysis from "./pages/GuidedAnalysis";
 
 function Shell() {
   const { user, loginDemo } = useApp();
@@ -44,6 +45,7 @@ function Shell() {
         <Route path="/dofile" element={<DoFile />} />
         <Route path="/results" element={<Results />} />
         <Route path="/projects" element={<Projects />} />
+        <Route path="/guided-analysis" element={<GuidedAnalysis />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
