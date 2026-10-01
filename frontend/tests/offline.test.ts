@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseDelimited, parseExcelWorkbook, runOffline, runOfflineTransform, type OfflineDataset } from "../src/offline.ts";
+import { assessDataQuality, parseDelimited, parseExcelWorkbook, runOffline, runOfflineTransform, type OfflineDataset } from "../src/offline.ts";
 import * as XLSX from "xlsx";
 
 function table(ds: OfflineDataset, module: string, params: any) {
@@ -86,3 +86,19 @@ test("offline cleaning safely generates, filters, recodes, imputes, sorts and dr
   ds = runOfflineTransform(ds, "drop_missing", { variable: "group_code" }).dataset;
   assert.equal(ds.n_rows, 1);
 });
+
+test("data quality report counts missing, duplicate, mixed-type, constant, and IQR outlier values", () => {
+  const report = assessDataQuality(
+    ["value", "group", "mixed", "constant"],
+    [[1, "A", 1, 7], [2, "A", "x", 7], [3, "B", 2, 7], [4, "B", 3, 7],
+      [5, "B", 4, 7], [6, "A", 5, 7], [100, "A", 6, 7], [100, "A", 6, 7],
+      [null, null, null, 7]],
+  );
+  assert.equal(report.rowCount, 9);
+  assert.equal(report.missingCells, 3);
+  assert.equal(report.duplicateRows, 1);
+  assert.equal(report.variables.find((v: any) => v.name === "value")?.outliers, 2);
+  assert.equal(report.variables.find((v: any) => v.name === "mixed")?.mixedTypes, true);
+  assert.equal(report.variables.find((v: any) => v.name === "constant")?.constant, true);
+});
+
