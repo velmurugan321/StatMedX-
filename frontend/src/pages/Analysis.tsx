@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
-import { getOfflineDataset, offlineSchema, runOffline } from "../offline";
+import { getOfflineDataset, offlineSchema, runOffline, saveOfflineResult } from "../offline";
 import * as XLSX from "xlsx";
 import { useApp } from "../state";
 import { MODULES } from "../modules";
@@ -10,6 +10,8 @@ import { Btn, ErrorNote, Labeled, Spinner, inputCls } from "../components/ui";
 
 export default function Analysis() {
   const { moduleId } = useParams();
+  const [searchParams] = useSearchParams();
+  const prefill = searchParams.toString();
   const mod = MODULES.find((m) => m.id === moduleId) || MODULES[0];
   const { activeDataset, dataVersion } = useApp();
   const [schema, setSchema] = useState<any | null>(null);
@@ -22,7 +24,14 @@ export default function Analysis() {
     setValues({});
     setResult(null);
     setErr(null);
-  }, [mod.id]);
+    const query = new URLSearchParams(prefill);
+    const initial:Record<string,any>={};
+    for(const field of mod.fields){
+      const value=query.get(field.key);if(value===null)continue;
+      initial[field.key]=field.kind==="vars"?value.split("|").filter(Boolean):field.kind==="number"?Number(value):field.kind==="checkbox"?value==="true":value;
+    }
+    setValues(initial);
+  }, [mod.id, prefill]);
 
   useEffect(() => {
     if (!activeDataset) return setSchema(null);
@@ -59,7 +68,8 @@ export default function Analysis() {
         const ds = await getOfflineDataset(activeDataset.id);
         if (!ds) throw new Error("Offline dataset not found.");
         const offlineResult = runOffline(ds, mod.id, params);
-        res = { id: null, title: offlineResult.title, result: offlineResult };
+        const saved = await saveOfflineResult({ dataset_id: activeDataset.id, module: mod.id, title: offlineResult.title, result: offlineResult });
+        res = { ...saved, result: offlineResult };
       } else {
         try {
           res = await api("/api/analysis", {
@@ -70,7 +80,8 @@ export default function Analysis() {
           const ds = await getOfflineDataset(activeDataset.id);
           if (!ds) throw e;
           const offlineResult = runOffline(ds, mod.id, params);
-          res = { id: null, title: offlineResult.title, result: offlineResult };
+          const saved = await saveOfflineResult({ dataset_id: activeDataset.id, module: mod.id, title: offlineResult.title, result: offlineResult });
+          res = { ...saved, result: offlineResult };
         }
       }
       setResult(res);
@@ -241,16 +252,18 @@ export default function Analysis() {
           {!busy && !result && !err && (
             <div className="rounded-2xl border-2 border-dashed border-slate-200 p-10 text-center text-sm text-slate-400">
               Configure the options and press <b>Run analysis</b>.<br />
-              Results are saved automatically to the Results window.
+              Results are saved locally for offline datasets, and to your account for online datasets.
             </div>
           )}
           {result && (
             <div className="space-y-4">
               <div className="flex flex-wrap gap-1.5">
+                <Btn variant="ghost" onClick={() => setResult(null)}>← Back to analysis options</Btn>
                 <Btn variant="ghost" onClick={downloadExcel}>⬇ Excel</Btn>
                 <Btn variant="ghost" onClick={downloadCSV}>⬇ CSV</Btn>
                 <Btn variant="ghost" onClick={printResult}>🖨 PDF / Print</Btn>
-                {result.id && <span className="self-center text-[11px] text-slate-400">Server result #${result.id}</span>}
+                {result.id > 0 && <span className="self-center text-[11px] text-slate-400">Server result #{result.id}</span>}
+                {result.id < 0 && <span className="self-center text-[11px] text-slate-400">Saved on this device</span>}
               </div>
               <div data-result-print><ResultsView result={result.result} /></div>
             </div>

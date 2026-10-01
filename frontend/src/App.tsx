@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useApp } from "./state";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
@@ -9,14 +9,19 @@ import Analysis from "./pages/Analysis";
 import Console from "./pages/Console";
 import DoFile from "./pages/DoFile";
 import Results from "./pages/Results";
+import Projects from "./pages/Projects";
+import GuidedAnalysis from "./pages/GuidedAnalysis";
 
 function Shell() {
   const { user, loginDemo } = useApp();
+  const location = useLocation();
 
   // auto-demo: if no session, silently start the demo workspace so the app is instantly usable
   useEffect(() => {
     if (!user) loginDemo().catch(() => {});
-  }, []);
+  }, [user, location.pathname]);
+
+  if (location.pathname === "/login") return <Login />;
 
   if (!user) {
     return (
@@ -32,12 +37,15 @@ function Shell() {
   return (
     <Layout>
       <Routes>
+        <Route path="/login" element={<Login />} />
         <Route path="/" element={<Dashboard />} />
         <Route path="/data" element={<DataEditor />} />
         <Route path="/analysis/:moduleId" element={<Analysis />} />
         <Route path="/console" element={<Console />} />
         <Route path="/dofile" element={<DoFile />} />
         <Route path="/results" element={<Results />} />
+        <Route path="/projects" element={<Projects />} />
+        <Route path="/guided-analysis" element={<GuidedAnalysis />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

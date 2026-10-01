@@ -1,6 +1,28 @@
 import React from "react";
 import PlotlyChart from "./PlotlyChart";
 
+function safeResultMarkup(markup: string): string {
+  const source = new DOMParser().parseFromString(String(markup || ""), "text/html");
+  const allowed = new Set(["b", "strong", "i", "em", "code", "pre", "br", "sub", "sup"]);
+  const forbidden = new Set(["script", "style", "iframe", "object", "embed", "svg", "math"]);
+  const copy = (node: Node): Node | null => {
+    if (node.nodeType === Node.TEXT_NODE) return document.createTextNode(node.textContent || "");
+    if (!(node instanceof HTMLElement)) return null;
+    if (forbidden.has(node.localName)) return null;
+    if (allowed.has(node.localName)) {
+      const clean = document.createElement(node.localName);
+      node.childNodes.forEach(child => { const safe = copy(child); if (safe) clean.appendChild(safe); });
+      return clean;
+    }
+    const fragment = document.createDocumentFragment();
+    node.childNodes.forEach(child => { const safe = copy(child); if (safe) fragment.appendChild(safe); });
+    return fragment;
+  };
+  const clean = document.createElement("div");
+  source.body.childNodes.forEach(node => { const safe = copy(node); if (safe) clean.appendChild(safe); });
+  return clean.innerHTML;
+}
+
 /** Renders the common result format: {title, command?, blocks:[text|table|figure|code]} */
 export function ResultBlocks({ result }: { result: any }) {
   return (
@@ -9,7 +31,7 @@ export function ResultBlocks({ result }: { result: any }) {
         if (b.type === "text")
           return (
             <div key={i} className="text-sm leading-relaxed text-slate-700"
-                 dangerouslySetInnerHTML={{ __html: b.content }} />
+                 dangerouslySetInnerHTML={{ __html: safeResultMarkup(b.content) }} />
           );
         if (b.type === "code")
           return (

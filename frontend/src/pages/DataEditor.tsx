@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { api } from "../api";
+import { api, downloadUrl } from "../api";
 import { useApp } from "../state";
 import { Btn, ErrorNote, Labeled, Modal, Spinner, inputCls } from "../components/ui";
+import { assessDataQuality, getOfflineDataset, offlineSchema, runOfflineTransform, saveOfflineDataset, updateOfflineCell } from "../offline";
+import * as XLSX from "xlsx";
 
 interface TransformDialog {
   op: string;
@@ -11,7 +13,7 @@ interface TransformDialog {
 }
 
 export default function DataEditor() {
-  const { activeDataset, dataVersion, bumpData, refreshDatasets } = useApp();
+  const { activeDataset, dataVersion, bumpData, refreshDatasets, captureDataset, recordUndo } = useApp();
   const [data, setData] = useState<any | null>(null);
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<{ r: number; c: string; v: string } | null>(null);
@@ -21,14 +23,28 @@ export default function DataEditor() {
   const [dlg, setDlg] = useState<TransformDialog | null>(null);
   const [schema, setSchema] = useState<any | null>(null);
   const [view, setView] = useState<"data" | "variables">("data");
+  const [qualityReport, setQualityReport] = useState<any|null>(null);
+  const [qualityBusy, setQualityBusy] = useState(false);
+  const [previewBusy, setPreviewBusy] = useState(false);
 
   const pageSize = 50;
   const dsid = activeDataset?.id;
+
+  useEffect(() => { setQualityReport(null); }, [activeDataset?.id, dataVersion]);
 
   const load = useCallback(async () => {
     if (!dsid) return;
     setBusy(true);
     try {
+      if (dsid < 0) {
+        const ds = await getOfflineDataset(dsid);
+        if (!ds) throw new Error("Offline dataset not found.");
+        const schema = offlineSchema(ds);
+        setData({ columns: schema.columns.map((c: any) => ({ name: c.name, type: c.type })), rows: ds.rows.slice((page - 1) * pageSize, page * pageSize), row_start: (page - 1) * pageSize, total: ds.rows.length });
+        setSchema(schema);
+        setErr(null);
+        return;
+      }
       const d = await api(`/api/datasets/${dsid}/data?page=${page}&size=${pageSize}`);
       setData(d);
       setSchema(await api(`/api/datasets/${dsid}/schema`));
@@ -55,10 +71,39 @@ export default function DataEditor() {
     setMsg(null);
     setBusy(true);
     try {
+      if (dsid! < 0) {
+        const ds = await getOfflineDataset(dsid!);
+        if (!ds) throw new Error("Offline dataset not found.");
+        const res = runOfflineTransform(ds, op, params);
+        if (op === "dedupe" && params.mode === "report") {
+          setDlg({ op: "dedupe", title: "Duplicate detection", payload: {}, body: (
+            <div>
+              <div className="mb-2 text-sm text-slate-600">{res.message}</div>
+              <div className="max-h-52 overflow-auto rounded-lg border border-slate-200">
+                <table className="smx-table"><thead><tr>{(res.duplicates?.[0] ? ds.columns : ["—"]).map((k: string) => <th key={k}>{k}</th>)}</tr></thead>
+                  <tbody>{(res.duplicates || []).slice(0, 200).map((row, i) => <tr key={i}>{row.map((v, j) => <td key={j}>{v == null ? "" : String(v)}</td>)}</tr>)}</tbody>
+                </table>
+              </div>
+              <div className="mt-3 flex justify-end"><Btn variant="danger" onClick={() => void previewTransform("dedupe", {})}>Review removal</Btn></div>
+            </div>
+          ) });
+          return;
+        }
+        await saveOfflineDataset(res.dataset);
+        recordUndo(ds);
+        setMsg(res.message);
+        setDlg(null);
+        setPage(1);
+        bumpData();
+        await refreshDatasets();
+        return;
+      }
+      const before = await captureDataset(activeDataset);
       const res = await api(`/api/datasets/${dsid}/transform`, {
         method: "POST",
         body: JSON.stringify({ op, params }),
       });
+      recordUndo(before);
       setMsg(res.message || "Done");
       setDlg(null);
       await load();
@@ -75,15 +120,85 @@ export default function DataEditor() {
   const saveCell = async () => {
     if (!editing) return;
     try {
+      if (dsid! < 0) {
+        const before = await getOfflineDataset(dsid!);
+        if (!before) throw new Error("Offline dataset not found.");
+        await updateOfflineCell(dsid!, editing.r, editing.c, editing.v);
+        recordUndo(before);
+        setEditing(null);
+        await load();
+        bumpData();
+        refreshDatasets();
+        return;
+      }
+      const before = await captureDataset(activeDataset);
       await api(`/api/datasets/${dsid}/cell`, {
         method: "POST",
         body: JSON.stringify({ row: editing.r, column: editing.c, value: editing.v === "" ? null : editing.v }),
       });
+      recordUndo(before);
       setEditing(null);
       await load();
     } catch (e: any) {
       setErr(e.message);
       setEditing(null);
+    }
+  };
+
+  const createQualityReport = async () => {
+    if (!activeDataset) return;
+    setQualityBusy(true); setErr(null);
+    try {
+      const snapshot = await captureDataset(activeDataset);
+      setQualityReport(assessDataQuality(snapshot.columns, snapshot.rows));
+    } catch (e:any) { setErr(e.message || "Could not create the data quality report."); }
+    finally { setQualityBusy(false); }
+  };
+
+  const previewTransform = async (op: string, params: any) => {
+    if (!activeDataset) return;
+    setErr(null);
+    setPreviewBusy(true);
+    try {
+      const before = await captureDataset(activeDataset);
+      const preview = runOfflineTransform({ ...before, rows: before.rows.map((row: any[]) => [...row]) }, op, params);
+      const after = preview.dataset;
+      const beforeQuality = assessDataQuality(before.columns, before.rows);
+      const afterQuality = assessDataQuality(after.columns, after.rows);
+      const selectedNames: string[] = Array.isArray(params.variables) ? params.variables : params.name ? [params.name] : before.columns;
+      const selectedMissing = (report: any) => report.variables.filter((item: any) => selectedNames.includes(item.name)).reduce((sum: number, item: any) => sum + item.missing, 0);
+      let changedCells = 0;
+      for (let r = 0; r < Math.min(before.rows.length, after.rows.length); r++) {
+        for (let c = 0; c < Math.min(before.columns.length, after.columns.length); c++) {
+          if (JSON.stringify(before.rows[r][c]) !== JSON.stringify(after.rows[r][c])) changedCells++;
+        }
+      }
+      setDlg({
+        op: "clean_preview",
+        title: "Review cleaning changes",
+        payload: { op, params },
+        body: (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">{preview.message} Review the impact before applying this change.</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {[["Rows", before.rows.length, after.rows.length], ["Columns", before.columns.length, after.columns.length], ["Missing cells", beforeQuality.missingCells, afterQuality.missingCells], ["Duplicate rows", beforeQuality.duplicateRows, afterQuality.duplicateRows]].map(([label, oldValue, newValue]: any) => (
+                <div key={label} className="rounded-lg bg-slate-50 p-3"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</div><div className="mt-1 text-sm font-bold text-slate-800">{Number(oldValue).toLocaleString()} <span className="font-normal text-slate-400">→</span> {Number(newValue).toLocaleString()}</div></div>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500">Changed cell values in retained rows: {changedCells.toLocaleString()}. Undo remains available after applying.</p>
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <div className="border-b border-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">Preview of resulting data (first 5 rows)</div>
+              <table className="smx-table"><thead><tr>{after.columns.map((name: string) => <th key={name}>{name}</th>)}</tr></thead>
+                <tbody>{after.rows.slice(0, 5).map((row: any[], index: number) => <tr key={index}>{after.columns.map((_: string, col: number) => <td key={col}>{row[col] == null ? <span className="text-slate-300">·</span> : String(row[col])}</td>)}</tr>)}</tbody>
+              </table>
+            </div>
+          </div>
+        ),
+      });
+    } catch (e: any) {
+      setErr(e.message || "Could not preview the cleaning change.");
+    } finally {
+      setPreviewBusy(false);
     }
   };
 
@@ -183,18 +298,17 @@ export default function DataEditor() {
   };
 
   const openMissing = () => {
-    let name = varNames[0], method = "mean";
+    let names = numNames.length ? [numNames[0]] : [], method = "mean";
     setDlg({
       op: "impute_missing",
-      title: "Handle missing data",
-      payload: () => ({ name, method }),
+      title: "Fill missing values",
+      payload: () => ({ variables: names, method }),
       body: (
         <div className="space-y-3">
-          <Labeled label="Variable">
-            <select className={inputCls} onChange={(e) => (name = e.target.value)} defaultValue={name}>
-              {numNames.map((v: string) => <option key={v}>{v}</option>)}
-            </select>
-          </Labeled>
+          <div><div className="mb-1 text-xs font-semibold text-slate-600">Numeric columns to fill</div><div className="max-h-40 space-y-1 overflow-auto rounded-lg border border-slate-200 p-2">
+            {numNames.map((v: string) => <label key={v} className="flex items-center gap-2 text-sm"><input type="checkbox" defaultChecked={names.includes(v)} onChange={(e) => { names = e.target.checked ? [...names, v] : names.filter((name) => name !== v); }} />{v}</label>)}
+            {!numNames.length && <p className="text-xs text-slate-500">No numeric columns are available.</p>}
+          </div></div>
           <Labeled label="Impute with">
             <select className={inputCls} onChange={(e) => (method = e.target.value)} defaultValue="mean">
               <option value="mean">Mean</option>
@@ -202,9 +316,23 @@ export default function DataEditor() {
               <option value="zero">Zero</option>
             </select>
           </Labeled>
-          <div className="text-[11px] text-slate-400">
-            Missing summary: {cols.map((c: any) => `${c.name}: ${c.n_unique === undefined ? "?" : ""}`).slice(0, 0)}
-            Use the console command <code className="mono">misstable summarize</code> for a full report.
+          <div className="text-[11px] text-slate-400">Only selected columns are changed. Review the missing-cell totals in the preview before applying.</div>
+        </div>
+      ),
+    } as any);
+  };
+
+  const openDropMissing = () => {
+    let variables = [...varNames];
+    setDlg({
+      op: "drop_missing",
+      title: "Choose columns for missing-row removal",
+      payload: () => ({ variables }),
+      body: (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">Rows are removed only when a selected column is missing. By default, all columns are selected.</p>
+          <div className="max-h-56 space-y-1 overflow-auto rounded-lg border border-slate-200 p-2">
+            {varNames.map((name: string) => <label key={name} className="flex items-center gap-2 text-sm"><input type="checkbox" defaultChecked={variables.includes(name)} onChange={(e) => { variables = e.target.checked ? [...variables, name] : variables.filter((item) => item !== name); }} />{name}</label>)}
           </div>
         </div>
       ),
@@ -214,10 +342,17 @@ export default function DataEditor() {
   const openDuplicates = async () => {
     setBusy(true);
     try {
-      const res = await api(`/api/datasets/${dsid}/transform`, {
-        method: "POST",
-        body: JSON.stringify({ op: "dedupe", params: { mode: "report" } }),
-      });
+      let res: any;
+      if (dsid! < 0) {
+        const ds = await getOfflineDataset(dsid!);
+        if (!ds) throw new Error("Offline dataset not found.");
+        res = runOfflineTransform(ds, "dedupe", { mode: "report" });
+      } else {
+        res = await api(`/api/datasets/${dsid}/transform`, {
+          method: "POST",
+          body: JSON.stringify({ op: "dedupe", params: { mode: "report" } }),
+        });
+      }
       setDlg({
         op: "dedupe",
         title: "Duplicate detection",
@@ -236,7 +371,7 @@ export default function DataEditor() {
               </table>
             </div>
             <div className="mt-3 flex justify-end gap-2">
-              <Btn variant="danger" onClick={() => runTransform("dedupe", {})}>Remove duplicates</Btn>
+              <Btn variant="danger" onClick={() => void previewTransform("dedupe", {})}>Review removal</Btn>
             </div>
           </div>
         ),
@@ -267,23 +402,43 @@ export default function DataEditor() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <Btn variant="soft" onClick={() => void createQualityReport()} disabled={qualityBusy}>
+          {qualityBusy ? "Checking data…" : "▤ Data quality report"}
+        </Btn>
+        {qualityReport && <span className="text-xs text-slate-500">Report covers all {qualityReport.rowCount.toLocaleString()} rows.</span>}
+      </div>
+
+      {qualityReport && (
+        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+          <div className="flex items-center justify-between gap-2">
+            <div><h2 className="font-bold text-slate-800">Data quality</h2><p className="text-xs text-slate-500">Review these flags before analysis; they do not change your data.</p></div>
+            <button className="rounded px-2 py-1 text-sm text-slate-500 hover:bg-slate-100" onClick={() => setQualityReport(null)} aria-label="Close data quality report">✕</button>
+          </div>
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+            {[["Missing cells",qualityReport.missingCells],["Duplicate rows",qualityReport.duplicateRows],["Variables",qualityReport.columnCount],["Observations",qualityReport.rowCount]].map(([label,value]:any)=>(
+              <div key={label} className="rounded-lg bg-slate-50 p-3"><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div><div className="mt-1 text-lg font-bold text-slate-800">{Number(value).toLocaleString()}</div></div>
+            ))}
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="smx-table"><thead><tr><th>Variable</th><th>Missing</th><th>Missing %</th><th>Distinct</th><th>IQR outliers</th><th>Flags</th></tr></thead>
+              <tbody>{qualityReport.variables.map((v:any)=><tr key={v.name}><td className="font-medium">{v.name}</td><td>{v.missing}</td><td>{v.missingPercent.toFixed(1)}%</td><td>{v.unique}</td><td>{v.outliers}</td><td>{[v.mixedTypes&&"mixed types",v.constant&&"constant"].filter(Boolean).join(", ")||"—"}</td></tr>)}</tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-slate-400">Outliers use the 1.5×IQR rule on numeric values. Duplicate count reports extra copies of identical rows.</p>
+        </section>
+      )}
+
       <ErrorNote msg={err} />
       {msg && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{msg}</div>}
+      {dsid < 0 && <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">Offline editor: edit cells, delete rows, use the data-cleaning tools below, or export CSV/Excel. Changes are saved on this device.</div>}
 
       {view === "data" ? (
         <>
           {/* toolbar */}
           <div className="flex flex-wrap gap-1.5">
-            <Btn variant="soft" onClick={openGenerate}>ƒ Generate</Btn>
-            <Btn variant="soft" onClick={openRecode}>↺ Recode</Btn>
-            <Btn variant="soft" onClick={openFilter}>⧨ Filter</Btn>
-            <Btn variant="soft" onClick={openSort}>⇅ Sort</Btn>
-            <Btn variant="soft" onClick={() => runTransform("add_variable", { name: prompt("Variable name?") })}>+ Variable</Btn>
-            <Btn variant="soft" onClick={() => runTransform("add_row", {})}>+ Case</Btn>
-            <Btn variant="soft" onClick={openMissing}>◌ Missing data</Btn>
-            <Btn variant="soft" onClick={openDuplicates}>⧉ Duplicates</Btn>
-            <Btn variant="ghost" onClick={() => exportDataset(dsid!)}>⬇ Export CSV</Btn>
-            <Btn variant="ghost" onClick={() => exportDataset(dsid!, "excel")}>⬇ Excel</Btn>
+            <Btn variant="ghost" onClick={() => exportDataset(dsid!).catch((e: any) => setErr(e.message))}>⬇ Export CSV</Btn>
+            <Btn variant="ghost" onClick={() => exportDataset(dsid!, "excel").catch((e: any) => setErr(e.message))}>⬇ Excel</Btn>
           </div>
 
           {/* grid */}
@@ -337,7 +492,7 @@ export default function DataEditor() {
                         <button
                           className="px-1 text-[11px] text-slate-300 opacity-0 hover:text-red-500 group-hover:opacity-100"
                           title="Delete case"
-                          onClick={() => runTransform("delete_rows", { indices: [data.row_start + ri] })}
+                          onClick={() => void previewTransform("delete_rows", { indices: [data.row_start + ri] })}
                         >✕</button>
                       </td>
                     </tr>
@@ -358,6 +513,21 @@ export default function DataEditor() {
               <Btn variant="ghost" onClick={() => setPage(totalPages)} disabled={page >= totalPages}>»</Btn>
             </div>
           </div>
+          <details className="rounded-xl border border-slate-200 bg-white p-4">
+            <summary className="cursor-pointer select-none text-sm font-bold text-slate-800">Data cleaning</summary>
+            <p className="mt-1 text-xs text-slate-500">Generate or recode variables, filter and sort rows, handle missing values, remove duplicates, or drop incomplete rows.</p>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              <Btn variant="soft" onClick={openGenerate}>ƒ Generate variable</Btn>
+              <Btn variant="soft" onClick={openGenerate}>+ Add variable</Btn>
+              <Btn variant="soft" onClick={() => void previewTransform("add_row", {})}>+ Add case</Btn>
+              <Btn variant="soft" onClick={openRecode}>↺ Recode values</Btn>
+              <Btn variant="soft" onClick={openFilter}>⧨ Filter rows</Btn>
+              <Btn variant="soft" onClick={openSort}>⇅ Sort rows</Btn>
+              <Btn variant="soft" onClick={openMissing}>◌ Impute missing</Btn>
+              <Btn variant="soft" onClick={openDuplicates}>⧉ Find duplicates</Btn>
+              <Btn variant="danger" onClick={openDropMissing}>Drop rows with missing values</Btn>
+            </div>
+          </details>
         </>
       ) : (
         /* ---------- Variable view ---------- */
@@ -374,16 +544,14 @@ export default function DataEditor() {
                   <td>{i + 1}</td>
                   <td className="font-semibold">{c.name}</td>
                   <td>{c.numeric ? "numeric" : "string"}</td>
-                  <td>
-                    <VariableLabel dsid={dsid} name={c.name} />
-                  </td>
+                  <td>{dsid < 0 ? <span className="text-slate-400">Offline</span> : <VariableLabel dsid={dsid} name={c.name} />}</td>
                   <td>{c.numeric ? (c.n_unique <= 6 ? "yes (few levels)" : "—") : "yes"}</td>
                   <td>{c.n_unique}</td>
                   <td>
-                    <button className="text-[11px] text-slate-400 hover:text-red-500"
+                    {dsid > 0 && <button className="text-[11px] text-slate-400 hover:text-red-500"
                             onClick={() => confirm(`Delete variable ${c.name}?`) && runTransform("delete_variable", { name: c.name })}>
                       ✕
-                    </button>
+                    </button>}
                   </td>
                 </tr>
               ))}
@@ -395,12 +563,18 @@ export default function DataEditor() {
       {dlg && (
         <Modal open title={dlg.title} onClose={() => setDlg(null)}>
           {dlg.body}
-          {dlg.op !== "dedupe" && (
+          {dlg.op === "clean_preview" ? (
             <div className="mt-4 flex justify-end gap-2">
               <Btn variant="ghost" onClick={() => setDlg(null)}>Cancel</Btn>
-              <Btn onClick={() => {
+              <Btn disabled={previewBusy || busy} onClick={() => runTransform(dlg.payload.op, dlg.payload.params)}>Apply cleaning</Btn>
+            </div>
+          ) : dlg.op !== "dedupe" && (
+            <div className="mt-4 flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setDlg(null)}>Cancel</Btn>
+              <Btn disabled={previewBusy || busy} onClick={() => {
                 const params = typeof dlg.payload === "function" ? (dlg.payload as any)() : dlg.payload;
-                runTransform(dlg.op, params);
+                if (["filter", "sort", "impute_missing", "drop_missing", "recode", "generate", "add_variable"].includes(dlg.op)) void previewTransform(dlg.op, params);
+                else runTransform(dlg.op, params);
               }}>Apply</Btn>
             </div>
           )}
@@ -411,7 +585,22 @@ export default function DataEditor() {
 }
 
 async function exportDataset(dsid: number, format: "csv" | "excel" = "csv") {
-  const res = await fetch(`/api/datasets/${dsid}/transform`, {
+  if (dsid < 0) {
+    const ds = await getOfflineDataset(dsid);
+    if (!ds) throw new Error("Offline dataset not found.");
+    let blob: Blob;
+    if (format === "excel") {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([ds.columns, ...ds.rows]), "Data");
+      blob = new Blob([XLSX.write(wb, { bookType: "xlsx", type: "array" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    } else {
+      const esc = (v: any) => { const s = v == null ? "" : String(v); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+      blob = new Blob(["\uFEFF", [ds.columns, ...ds.rows].map(r => r.map(esc).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+    }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `${ds.name}.${format === "excel" ? "xlsx" : "csv"}`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    return;
+  }
+  const res = await fetch(downloadUrl(`/api/datasets/${dsid}/transform`), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

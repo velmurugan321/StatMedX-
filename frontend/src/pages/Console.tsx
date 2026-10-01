@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useApp } from "../state";
 import ResultsView from "../components/ResultsView";
+import { getOfflineDataset, runOfflineTransform, saveOfflineDataset } from "../offline";
 
 interface Entry {
   cmd: string;
@@ -10,7 +11,7 @@ interface Entry {
 }
 
 export default function Console() {
-  const { activeDataset, bumpData } = useApp();
+  const { activeDataset, setActiveDataset, bumpData, captureDataset, recordUndo } = useApp();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<string[]>([]);
@@ -19,10 +20,11 @@ export default function Console() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    api<string[]>("/api/commands/history?limit=25")
-      .then(setHistory)
-      .catch(() => {});
-  }, [activeDataset?.id]);
+    const key = `statmedx_command_history_${activeDataset?.id}`;
+    try { const stored=JSON.parse(localStorage.getItem(key)||"[]"); if(Array.isArray(stored))setHistory(stored); } catch {}
+    if(activeDataset?.id>0) api<string[]>(`/api/commands/history?dataset_id=${activeDataset.id}&limit=25`).then(setHistory).catch(()=>{});
+    else if(activeDataset?.remote_dataset_id) api<string[]>(`/api/commands/history?dataset_id=${activeDataset.remote_dataset_id}&limit=25`).then(setHistory).catch(()=>{});
+  }, [activeDataset?.id, activeDataset?.remote_dataset_id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -37,11 +39,136 @@ export default function Console() {
       return;
     }
     setInput("");
-    setHistory((h) => [cmd, ...h.filter((c) => c !== cmd)].slice(0, 50));
+    setHistory((h) => { const next=[cmd, ...h.filter((c) => c !== cmd)].slice(0,50);try{localStorage.setItem(`statmedx_command_history_${activeDataset.id}`,JSON.stringify(next));}catch{}return next; });
     setHIdx(-1);
     setEntries((e) => [...e, { cmd, result: null }]);
     setBusy(true);
     try {
+      const mutating = /^(generate|gen|recode|replace|drop|keep|sort|rename|duplicates\s+drop)\b/i.test(cmd);
+      const before = mutating ? await captureDataset(activeDataset) : null;
+      if (activeDataset.id < 0) {
+        const ds = await getOfflineDataset(activeDataset.id);
+        if (!ds) throw new Error("The selected offline dataset could not be loaded. Reopen it from Dashboard.");
+        const [name, ...tail] = cmd.trim().split(/\s+/);
+        const command = name.toLowerCase();
+        const rest = tail.join(" ").trim();
+        // Local imports have negative IDs. When the analysis API is available,
+        // mirror the current local data there and use the full Stata-style parser.
+        try {
+          let remoteId = ds.remote_dataset_id;
+          if (remoteId) {
+            try { await api(`/api/datasets/${remoteId}`); }
+            catch { remoteId = undefined; }
+          }
+          if (!remoteId) {
+            const csvCell = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+            const csv = [ds.columns, ...ds.rows].map(row => row.map(csvCell).join(",")).join("\n");
+            const form = new FormData();
+            form.append("name", ds.name);
+            form.append("file", new File([csv], `${ds.name || "dataset"}.csv`, { type: "text/csv" }));
+            const uploaded = await api<any>("/api/datasets/upload", { method: "POST", body: form });
+            remoteId = uploaded.id;
+          }
+          await api(`/api/datasets/${remoteId}/data`, {
+            method: "PUT", body: JSON.stringify({ columns: ds.columns, rows: ds.rows }),
+          });
+          const response = await api<any>("/api/commands", {
+            method: "POST", body: JSON.stringify({ dataset_id: remoteId, command: cmd }),
+          });
+          const first = await api<any>(`/api/datasets/${remoteId}/data?page=1&size=500`);
+          const columns = (first.columns || []).map((c: any) => c.name);
+          const rows: any[][] = (first.rows || []).map((r: any) => columns.map((c: string) => r[c]));
+          let page = 2;
+          while (rows.length < Number(first.total || 0)) {
+            const next = await api<any>(`/api/datasets/${remoteId}/data?page=${page++}&size=500`);
+            rows.push(...(next.rows || []).map((r: any) => columns.map((c: string) => r[c])));
+            if (!(next.rows || []).length) break;
+          }
+          const synced = { ...ds, remote_dataset_id: remoteId, columns, rows, n_rows: rows.length, n_cols: columns.length };
+          await saveOfflineDataset(synced);
+          setActiveDataset(synced);
+          setEntries((e) => { const copy = [...e]; copy[copy.length - 1] = { cmd, result: response.result }; return copy; });
+          if (before) recordUndo(before);
+          bumpData();
+          setBusy(false);
+          return;
+        } catch {
+          // Continue to the browser-side subset below; its error explains which
+          // commands need a live analysis server.
+        }
+        const table = (title: string, columns: string[], rows: any[][], note?: string) => ({
+          title, command: cmd,
+          blocks: [{ type: "table", name: title, columns: columns.map((label, i) => ({ key: `c${i}`, label })), rows, note }],
+        });
+        let result: any;
+        let changed = false;
+        if (command === "help" || command === "h") {
+          result = { title: "Offline Stata-style commands", command: cmd, blocks: [{ type: "text", content: "Available offline: describe, list [n], count, summarize (sum), tabulate (tab), generate (gen), keep if, drop if, drop variables, rename, sort, duplicates drop, and clear. Other commands need the connected analysis server." }] };
+        } else if (command === "describe" || command === "d") {
+          result = table("Dataset description", ["Variable", "Type", "Nonmissing", "Unique"], ds.columns.map((col, j) => {
+            const vals = ds.rows.map(r => r[j]).filter(v => v !== null && v !== "");
+            return [col, vals.some(v => typeof v === "number") ? "numeric" : "string", vals.length, new Set(vals.map(String)).size];
+          }), `${ds.n_rows} observations · ${ds.n_cols} variables`);
+        } else if (command === "count") {
+          result = { title: "Observations", command: cmd, blocks: [{ type: "text", content: `${ds.n_rows} observations` }] };
+        } else if (command === "list" || command === "browse") {
+          const n = Math.max(1, Math.min(200, Number(rest.split(/[ ,]/)[0]) || 10));
+          result = table("Data listing", ds.columns, ds.rows.slice(0, n), `Showing ${Math.min(n, ds.n_rows)} of ${ds.n_rows} observations`);
+        } else if (["summarize", "sum", "su"].includes(command)) {
+          const vars = rest.split(/[ ,]+/).filter(Boolean);
+          const cols = vars.length ? vars : ds.columns;
+          result = table("Summary statistics", ["Variable", "N", "Mean", "SD", "Min", "Max"], cols.map(v => {
+            const j = ds.columns.indexOf(v); if (j < 0) throw new Error(`Variable not found: ${v}`);
+            const a = ds.rows.map(r => Number(r[j])).filter(Number.isFinite);
+            const m = a.length ? a.reduce((s, x) => s + x, 0) / a.length : NaN;
+            const sd = a.length > 1 ? Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1)) : NaN;
+            return [v, a.length, m, sd, a.length ? Math.min(...a) : NaN, a.length ? Math.max(...a) : NaN].map(x => typeof x === "number" && Number.isFinite(x) ? Number(x.toFixed(4)) : x);
+          }));
+        } else if (["tab", "tabulate"].includes(command)) {
+          const v = rest.split(/[ ,]+/).filter(Boolean)[0]; const j = ds.columns.indexOf(v);
+          if (j < 0) throw new Error(`Variable not found: ${v || ""}`);
+          const counts = new Map<string, number>(); ds.rows.forEach(r => { const k = String(r[j] ?? "Missing"); counts.set(k, (counts.get(k) || 0) + 1); });
+          result = table(`Tabulation: ${v}`, [v, "Frequency", "Percent"], [...counts].map(([k, n]) => [k, n, Number((n * 100 / (ds.n_rows || 1)).toFixed(2))]));
+        } else if (["gen", "generate"].includes(command)) {
+          const m = /^([A-Za-z_][\w]*)\s*=\s*(.+)$/.exec(rest);
+          if (!m) throw new Error("Syntax: generate newvar = expression");
+          const out = runOfflineTransform(ds, "generate", { name: m[1], expression: m[2] });
+          await saveOfflineDataset(out.dataset); setActiveDataset(out.dataset); changed = true;
+          result = { title: "Command completed", command: cmd, blocks: [{ type: "text", content: out.message }] };
+        } else if (["keep", "drop"].includes(command) && /^if\s+/i.test(rest)) {
+          const condition = rest.replace(/^if\s+/i, "");
+          const out = runOfflineTransform(ds, "filter", { condition: command === "keep" ? condition : `!(${condition})` });
+          const next = out.dataset;
+          await saveOfflineDataset(next); setActiveDataset(next); changed = true;
+          result = { title: "Command completed", command: cmd, blocks: [{ type: "text", content: `${next.n_rows} observations remain.` }] };
+        } else if (command === "sort") {
+          const out = runOfflineTransform(ds, "sort", { variables: rest.split(/[ ,]+/).filter(Boolean) });
+          await saveOfflineDataset(out.dataset); setActiveDataset(out.dataset); changed = true;
+          result = { title: "Command completed", command: cmd, blocks: [{ type: "text", content: out.message }] };
+        } else if (command === "drop") {
+          const remove = rest.split(/[ ,]+/).filter(Boolean);
+          if (!remove.length || remove.some(v => !ds.columns.includes(v))) throw new Error("Specify existing variable names to drop.");
+          const keep = ds.columns.map((_, i) => i).filter(i => !remove.includes(ds.columns[i]));
+          const next = { ...ds, columns: keep.map(i => ds.columns[i]), rows: ds.rows.map(r => keep.map(i => r[i])), n_cols: keep.length };
+          await saveOfflineDataset(next); setActiveDataset(next); changed = true;
+          result = { title: "Command completed", command: cmd, blocks: [{ type: "text", content: `Dropped ${remove.join(", ")}.` }] };
+        } else if (command === "rename") {
+          const m = /^([\w]+)\s+([\w]+)$/.exec(rest);
+          if (!m || !ds.columns.includes(m[1])) throw new Error("Syntax: rename oldvar newvar (old variable must exist)");
+          if (ds.columns.includes(m[2])) throw new Error(`Variable already exists: ${m[2]}`);
+          const next = { ...ds, columns: ds.columns.map(v => v === m[1] ? m[2] : v) };
+          await saveOfflineDataset(next); setActiveDataset(next); changed = true;
+          result = { title: "Command completed", command: cmd, blocks: [{ type: "text", content: `Renamed ${m[1]} to ${m[2]}.` }] };
+        } else if (command === "clear") {
+          result = { title: "Dataset retained", command: cmd, blocks: [{ type: "text", content: "Offline clear does not delete your dataset. Use Dashboard to remove it." }] };
+        } else {
+          throw new Error(`“${command}” needs the connected analysis server. Type help to see commands available offline.`);
+        }
+        setEntries((e) => { const copy = [...e]; copy[copy.length - 1] = { cmd, result }; return copy; });
+        if (changed) { if (before) recordUndo(before); bumpData(); }
+        setBusy(false);
+        return;
+      }
       const res = await api<any>("/api/commands", {
         method: "POST",
         body: JSON.stringify({ dataset_id: activeDataset.id, command: cmd }),
@@ -51,6 +178,7 @@ export default function Console() {
         copy[copy.length - 1] = { cmd, result: res.result };
         return copy;
       });
+      if (before) recordUndo(before);
       if (/^(generate|gen|recode|replace|drop|keep|sort|rename|clear)\b/.test(cmd)) bumpData();
     } catch (e: any) {
       setEntries((e2) => {

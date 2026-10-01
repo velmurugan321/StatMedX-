@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useApp } from "../state";
 import { GROUPS, MODULES } from "../modules";
 
@@ -21,10 +21,11 @@ function NavItem({ to, icon, label, onClick }: { to: string; icon: string; label
 }
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  const { user, logout, datasets, activeDataset, setActiveDataset } = useApp();
+  const { user, logout, datasets, activeDataset, setActiveDataset, undo, redo, canUndo, canRedo } = useApp();
   const [openGroup, setOpenGroup] = useState<string | null>("03 · Descriptive");
   const [mobileOpen, setMobileOpen] = useState(false);
   const nav = useNavigate();
+  const location = useLocation();
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-slate-100">
@@ -74,6 +75,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <NavItem to="/console" icon="›_" label="Command console" onClick={() => setMobileOpen(false)} />
           <NavItem to="/dofile" icon="⌨" label="Do-file editor" onClick={() => setMobileOpen(false)} />
           <NavItem to="/results" icon="🗂" label="Results window" onClick={() => setMobileOpen(false)} />
+          <NavItem to="/projects" icon="▣" label="Analysis projects" onClick={() => setMobileOpen(false)} />
+          <NavItem to="/guided-analysis" icon="✦" label="Guided analysis" onClick={() => setMobileOpen(false)} />
           <div className="pt-3" />
           {(Array.isArray(GROUPS) ? GROUPS : []).map((g) => (
             <div key={g}>
@@ -97,6 +100,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="border-t border-white/10 px-4 py-3">
+          <div className="mb-3 border-b border-white/10 pb-3 text-[11px] text-slate-300">
+            <div className="font-bold text-white">VELMURUGAN</div>
+            <div>Statistician</div>
+            <a className="mt-1 inline-block text-sky-300 hover:text-sky-200" href="mailto:velmurugan.stat@gmail.com">
+              velmurugan.stat@gmail.com
+            </a>
+          </div>
           <div className="mb-1.5 truncate text-[12px] font-semibold text-slate-300">
             {user?.name || user?.email}
           </div>
@@ -123,7 +133,29 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <span className="font-extrabold text-slate-800">StatMedX</span>
         </header>
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-6xl px-4 py-5 lg:px-8 lg:py-7">{children}</div>
+          <div className="mx-auto max-w-6xl px-4 py-5 lg:px-8 lg:py-7">
+            <div className="mb-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-900"
+                  onClick={() => window.history.state?.idx > 0 ? nav(-1) : nav("/")}
+                  aria-label="Go back to the previous page"
+                >
+                  ← Back{location.pathname === "/" ? " to app" : ""}
+                </button>
+                <button type="button" disabled={!canUndo} onClick={() => void undo().catch(e => window.alert(e.message))}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" title="Undo the last data change">
+                  ↶ Undo
+                </button>
+                <button type="button" disabled={!canRedo} onClick={() => void redo().catch(e => window.alert(e.message))}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" title="Redo the last undone data change">
+                  ↷ Redo
+                </button>
+              </div>
+            </div>
+            {children}
+          </div>
         </main>
       </div>
     </div>

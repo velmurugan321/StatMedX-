@@ -169,6 +169,27 @@ class CellEdit(BaseModel):
     value: str | float | int | None
 
 
+class DatasetReplace(BaseModel):
+    columns: list[str]
+    rows: list[list[object]]
+
+
+@router.put("/{dsid}/data")
+def replace_dataset_data(dsid: int, body: DatasetReplace,
+                         db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Replace dataset contents from a locally edited offline dataset."""
+    ds = _own(db, user, dsid)
+    if not body.columns or any(len(row) != len(body.columns) for row in body.rows):
+        raise HTTPException(400, "Dataset columns and rows do not match")
+    df = pd.DataFrame(body.rows, columns=body.columns)
+    preserve = {v.name: v for v in ds.variables}
+    dataio.save_df(ds.id, df)
+    ds.n_rows, ds.n_cols = len(df), len(df.columns)
+    dataio.sync_variables(db, ds, df, preserve=preserve)
+    db.commit()
+    return _out(ds)
+
+
 @router.post("/{dsid}/cell")
 def edit_cell(dsid: int, body: CellEdit, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     ds = _own(db, user, dsid)
@@ -292,15 +313,28 @@ def transform(dsid: int, body: TransformIn, db: Session = Depends(get_db), user:
             msg += " — codes converted to missing"
 
         elif body.op == "impute_missing":
-            s = pd.to_numeric(df[p["name"]], errors="coerce")
             how = p.get("method", "mean")
-            fill = s.mean() if how == "mean" else s.median() if how == "median" else 0
-            n = int(s.isna().sum())
-            df[p["name"]] = s.fillna(fill)
-            msg = f"Imputed {n} missing value(s) in {p['name']} with {how} ({round(fill, 4)})"
+            names = p.get("variables") or [p["name"]]
+            if how not in {"mean", "median", "zero"}:
+                raise HTTPException(400, "Choose mean, median, or zero imputation.")
+            summaries = []
+            for name in names:
+                if name not in df.columns:
+                    raise HTTPException(400, f"Unknown variable: {name}")
+                s = pd.to_numeric(df[name], errors="coerce")
+                fill = s.mean() if how == "mean" else s.median() if how == "median" else 0
+                n = int(s.isna().sum())
+                df[name] = s.fillna(fill)
+                summaries.append(f"{name}: {n} ({round(fill, 4)})")
+            msg = f"Imputed missing value(s) using {how} — " + ", ".join(summaries)
 
         elif body.op == "drop_missing":
             cols = p.get("variables") or list(df.columns)
+            unknown = [name for name in cols if name not in df.columns]
+            if unknown:
+                raise HTTPException(400, f"Unknown variable(s): {', '.join(unknown)}")
+            if not cols:
+                raise HTTPException(400, "Select at least one column to check for missing values.")
             before = len(df)
             df = df.dropna(subset=cols).reset_index(drop=True)
             msg = f"Dropped {before - len(df)} rows with missing values"

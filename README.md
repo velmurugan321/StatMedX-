@@ -27,6 +27,8 @@ npm run dev          # → http://localhost:5173 (proxies /api → :8000)
 
 Open http://localhost:5173 — the **demo workspace** loads automatically with two
 sample datasets (`cardio_rct` — 250-patient RCT, `meta_studies` — 12 trials).
+The development server proxies `/api` to the local backend; production web and
+APK builds use `https://statmedx-api.onrender.com` by default.
 
 ## Test the statistical engine
 
@@ -37,6 +39,20 @@ cd backend && .venv/bin/pytest app/tests -v
 56 checks including a **real-R cross-validation battery** (actual R 4.6 via
 WebR/WASM, run on sleep/mtcars/InsectSprays/airquality) and official Stata
 documented-output anchors — see `docs/VALIDATION.md` and `crossval/`.
+
+## Android APK
+
+The Android build is offline-first. It supports local CSV/TXT/TSV and Excel
+imports, cell editing, row deletion, local result history, and selected
+browser-side analyses. Server-only analyses show
+an explicit message while offline. Stata/SPSS imports and the full analysis
+catalog need a FastAPI server.
+
+The Android workflow accepts the repository Actions variable
+`STATMEDX_API_URL` as an override for the FastAPI URL. If it is unset, production
+web and APK builds use `https://statmedx-api.onrender.com`. Local Vite development
+continues to use the `/api` proxy. Pull requests build the APK and run the backend
+validation suite.
 
 ## Architecture
 
