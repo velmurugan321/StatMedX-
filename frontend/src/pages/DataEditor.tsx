@@ -180,7 +180,7 @@ export default function DataEditor() {
         v.name, v.missing, v.missingPercent.toFixed(1), v.unique, v.outliers, v.mixedTypes, v.constant,
       ]),
     ];
-    const csv = "\\uFEFF" + rows.map(row => row.map(escapeCsv).join(",")).join("\\r\\n");
+    const csv = "\uFEFF" + rows.map(row => row.map(escapeCsv).join(",")).join("\r\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
