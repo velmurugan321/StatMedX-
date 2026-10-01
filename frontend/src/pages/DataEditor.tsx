@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, downloadUrl } from "../api";
 import { useApp } from "../state";
 import { Btn, ErrorNote, Labeled, Modal, Spinner, inputCls } from "../components/ui";
-import { deleteOfflineRow, getOfflineDataset, offlineSchema, updateOfflineCell } from "../offline";
+import { assessDataQuality, deleteOfflineRow, getOfflineDataset, offlineSchema, runOfflineTransform, saveOfflineDataset, updateOfflineCell } from "../offline";
 import * as XLSX from "xlsx";
 
 interface TransformDialog {
@@ -13,7 +13,7 @@ interface TransformDialog {
 }
 
 export default function DataEditor() {
-  const { activeDataset, dataVersion, bumpData, refreshDatasets } = useApp();
+  const { activeDataset, dataVersion, bumpData, refreshDatasets, captureDataset, recordUndo } = useApp();
   const [data, setData] = useState<any | null>(null);
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<{ r: number; c: string; v: string } | null>(null);
@@ -23,9 +23,13 @@ export default function DataEditor() {
   const [dlg, setDlg] = useState<TransformDialog | null>(null);
   const [schema, setSchema] = useState<any | null>(null);
   const [view, setView] = useState<"data" | "variables">("data");
+  const [qualityReport, setQualityReport] = useState<any|null>(null);
+  const [qualityBusy, setQualityBusy] = useState(false);
 
   const pageSize = 50;
   const dsid = activeDataset?.id;
+
+  useEffect(() => { setQualityReport(null); }, [activeDataset?.id, dataVersion]);
 
   const load = useCallback(async () => {
     if (!dsid) return;
@@ -66,11 +70,39 @@ export default function DataEditor() {
     setMsg(null);
     setBusy(true);
     try {
-      if (dsid! < 0) throw new Error("This transform needs the online analysis server. Offline cell editing, row deletion and export are available.");
+      if (dsid! < 0) {
+        const ds = await getOfflineDataset(dsid!);
+        if (!ds) throw new Error("Offline dataset not found.");
+        const res = runOfflineTransform(ds, op, params);
+        if (op === "dedupe" && params.mode === "report") {
+          setDlg({ op: "dedupe", title: "Duplicate detection", payload: {}, body: (
+            <div>
+              <div className="mb-2 text-sm text-slate-600">{res.message}</div>
+              <div className="max-h-52 overflow-auto rounded-lg border border-slate-200">
+                <table className="smx-table"><thead><tr>{(res.duplicates?.[0] ? ds.columns : ["—"]).map((k: string) => <th key={k}>{k}</th>)}</tr></thead>
+                  <tbody>{(res.duplicates || []).slice(0, 200).map((row, i) => <tr key={i}>{row.map((v, j) => <td key={j}>{v == null ? "" : String(v)}</td>)}</tr>)}</tbody>
+                </table>
+              </div>
+              <div className="mt-3 flex justify-end"><Btn variant="danger" onClick={() => runTransform("dedupe", {})}>Remove duplicates</Btn></div>
+            </div>
+          ) });
+          return;
+        }
+        await saveOfflineDataset(res.dataset);
+        recordUndo(ds);
+        setMsg(res.message);
+        setDlg(null);
+        setPage(1);
+        bumpData();
+        await refreshDatasets();
+        return;
+      }
+      const before = await captureDataset(activeDataset);
       const res = await api(`/api/datasets/${dsid}/transform`, {
         method: "POST",
         body: JSON.stringify({ op, params }),
       });
+      recordUndo(before);
       setMsg(res.message || "Done");
       setDlg(null);
       await load();
@@ -88,23 +120,52 @@ export default function DataEditor() {
     if (!editing) return;
     try {
       if (dsid! < 0) {
+        const before = await getOfflineDataset(dsid!);
+        if (!before) throw new Error("Offline dataset not found.");
         await updateOfflineCell(dsid!, editing.r, editing.c, editing.v);
+        recordUndo(before);
         setEditing(null);
         await load();
         bumpData();
         refreshDatasets();
         return;
       }
+      const before = await captureDataset(activeDataset);
       await api(`/api/datasets/${dsid}/cell`, {
         method: "POST",
         body: JSON.stringify({ row: editing.r, column: editing.c, value: editing.v === "" ? null : editing.v }),
       });
+      recordUndo(before);
       setEditing(null);
       await load();
     } catch (e: any) {
       setErr(e.message);
       setEditing(null);
     }
+  };
+
+  const deleteRow = async (index:number) => {
+    try {
+      if (dsid! < 0) {
+        const before = await getOfflineDataset(dsid!);
+        if (!before) throw new Error("Offline dataset not found.");
+        await deleteOfflineRow(dsid!, index);
+        recordUndo(before);
+        await load(); bumpData(); await refreshDatasets();
+      } else {
+        await runTransform("delete_rows", { indices: [index] });
+      }
+    } catch (e:any) { setErr(e.message); }
+  };
+
+  const createQualityReport = async () => {
+    if (!activeDataset) return;
+    setQualityBusy(true); setErr(null);
+    try {
+      const snapshot = await captureDataset(activeDataset);
+      setQualityReport(assessDataQuality(snapshot.columns, snapshot.rows));
+    } catch (e:any) { setErr(e.message || "Could not create the data quality report."); }
+    finally { setQualityBusy(false); }
   };
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
@@ -234,10 +295,17 @@ export default function DataEditor() {
   const openDuplicates = async () => {
     setBusy(true);
     try {
-      const res = await api(`/api/datasets/${dsid}/transform`, {
-        method: "POST",
-        body: JSON.stringify({ op: "dedupe", params: { mode: "report" } }),
-      });
+      let res: any;
+      if (dsid! < 0) {
+        const ds = await getOfflineDataset(dsid!);
+        if (!ds) throw new Error("Offline dataset not found.");
+        res = runOfflineTransform(ds, "dedupe", { mode: "report" });
+      } else {
+        res = await api(`/api/datasets/${dsid}/transform`, {
+          method: "POST",
+          body: JSON.stringify({ op: "dedupe", params: { mode: "report" } }),
+        });
+      }
       setDlg({
         op: "dedupe",
         title: "Duplicate detection",
@@ -287,24 +355,41 @@ export default function DataEditor() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <Btn variant="soft" onClick={() => void createQualityReport()} disabled={qualityBusy}>
+          {qualityBusy ? "Checking data…" : "▤ Data quality report"}
+        </Btn>
+        {qualityReport && <span className="text-xs text-slate-500">Report covers all {qualityReport.rowCount.toLocaleString()} rows.</span>}
+      </div>
+
+      {qualityReport && (
+        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+          <div className="flex items-center justify-between gap-2">
+            <div><h2 className="font-bold text-slate-800">Data quality</h2><p className="text-xs text-slate-500">Review these flags before analysis; they do not change your data.</p></div>
+            <button className="rounded px-2 py-1 text-sm text-slate-500 hover:bg-slate-100" onClick={() => setQualityReport(null)} aria-label="Close data quality report">✕</button>
+          </div>
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+            {[["Missing cells",qualityReport.missingCells],["Duplicate rows",qualityReport.duplicateRows],["Variables",qualityReport.columnCount],["Observations",qualityReport.rowCount]].map(([label,value]:any)=>(
+              <div key={label} className="rounded-lg bg-slate-50 p-3"><div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div><div className="mt-1 text-lg font-bold text-slate-800">{Number(value).toLocaleString()}</div></div>
+            ))}
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="smx-table"><thead><tr><th>Variable</th><th>Missing</th><th>Missing %</th><th>Distinct</th><th>IQR outliers</th><th>Flags</th></tr></thead>
+              <tbody>{qualityReport.variables.map((v:any)=><tr key={v.name}><td className="font-medium">{v.name}</td><td>{v.missing}</td><td>{v.missingPercent.toFixed(1)}%</td><td>{v.unique}</td><td>{v.outliers}</td><td>{[v.mixedTypes&&"mixed types",v.constant&&"constant"].filter(Boolean).join(", ")||"—"}</td></tr>)}</tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-slate-400">Outliers use the 1.5×IQR rule on numeric values. Duplicate count reports extra copies of identical rows.</p>
+        </section>
+      )}
+
       <ErrorNote msg={err} />
       {msg && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{msg}</div>}
-      {dsid < 0 && <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">Offline editor: double-tap a cell to change it, tap ✕ to delete a row, or export CSV/Excel. Transform tools need the analysis server.</div>}
+      {dsid < 0 && <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">Offline editor: edit cells, delete rows, use the data-cleaning tools below, or export CSV/Excel. Changes are saved on this device.</div>}
 
       {view === "data" ? (
         <>
           {/* toolbar */}
           <div className="flex flex-wrap gap-1.5">
-            {dsid > 0 && <>
-              <Btn variant="soft" onClick={openGenerate}>ƒ Generate</Btn>
-              <Btn variant="soft" onClick={openRecode}>↺ Recode</Btn>
-              <Btn variant="soft" onClick={openFilter}>⧨ Filter</Btn>
-              <Btn variant="soft" onClick={openSort}>⇅ Sort</Btn>
-              <Btn variant="soft" onClick={() => runTransform("add_variable", { name: prompt("Variable name?") })}>+ Variable</Btn>
-              <Btn variant="soft" onClick={() => runTransform("add_row", {})}>+ Case</Btn>
-              <Btn variant="soft" onClick={openMissing}>◌ Missing data</Btn>
-              <Btn variant="soft" onClick={openDuplicates}>⧉ Duplicates</Btn>
-            </>}
             <Btn variant="ghost" onClick={() => exportDataset(dsid!).catch((e: any) => setErr(e.message))}>⬇ Export CSV</Btn>
             <Btn variant="ghost" onClick={() => exportDataset(dsid!, "excel").catch((e: any) => setErr(e.message))}>⬇ Excel</Btn>
           </div>
@@ -360,7 +445,7 @@ export default function DataEditor() {
                         <button
                           className="px-1 text-[11px] text-slate-300 opacity-0 hover:text-red-500 group-hover:opacity-100"
                           title="Delete case"
-                          onClick={() => dsid! < 0 ? deleteOfflineRow(dsid!, data.row_start + ri).then(() => { load(); bumpData(); refreshDatasets(); }).catch((e: any) => setErr(e.message)) : runTransform("delete_rows", { indices: [data.row_start + ri] })}
+                          onClick={() => void deleteRow(data.row_start + ri)}
                         >✕</button>
                       </td>
                     </tr>
@@ -381,6 +466,21 @@ export default function DataEditor() {
               <Btn variant="ghost" onClick={() => setPage(totalPages)} disabled={page >= totalPages}>»</Btn>
             </div>
           </div>
+          <details className="rounded-xl border border-slate-200 bg-white p-4">
+            <summary className="cursor-pointer select-none text-sm font-bold text-slate-800">Data cleaning</summary>
+            <p className="mt-1 text-xs text-slate-500">Generate or recode variables, filter and sort rows, handle missing values, remove duplicates, or drop incomplete rows.</p>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              <Btn variant="soft" onClick={openGenerate}>ƒ Generate variable</Btn>
+              <Btn variant="soft" onClick={openGenerate}>+ Add variable</Btn>
+              <Btn variant="soft" onClick={() => runTransform("add_row", {})}>+ Add case</Btn>
+              <Btn variant="soft" onClick={openRecode}>↺ Recode values</Btn>
+              <Btn variant="soft" onClick={openFilter}>⧨ Filter rows</Btn>
+              <Btn variant="soft" onClick={openSort}>⇅ Sort rows</Btn>
+              <Btn variant="soft" onClick={openMissing}>◌ Impute missing</Btn>
+              <Btn variant="soft" onClick={openDuplicates}>⧉ Find duplicates</Btn>
+              <Btn variant="danger" onClick={() => confirm("Drop every row that has a missing value in any variable?") && runTransform("drop_missing", {})}>Drop rows with missing values</Btn>
+            </div>
+          </details>
         </>
       ) : (
         /* ---------- Variable view ---------- */
@@ -488,4 +588,3 @@ function VariableLabel({ dsid, name }: { dsid: number; name: string }) {
     />
   );
 }
-

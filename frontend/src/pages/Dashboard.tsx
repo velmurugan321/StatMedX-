@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { deleteOfflineDataset, parseDelimited, parseExcelFile, saveOfflineDataset } from "../offline";
+import { deleteOfflineDataset, parseDelimited, parseExcelFile, saveOfflineDataset, type OfflineDataset } from "../offline";
 import { useApp } from "../state";
 import { Btn, ErrorNote, inputCls } from "../components/ui";
 
@@ -10,9 +10,12 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [err, setErr] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [pasteName, setPasteName] = useState("Pasted data");
+  const [previewDatasets, setPreviewDatasets] = useState<OfflineDataset[] | null>(null);
+  const [previewIndex, setPreviewIndex] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const nav = useNavigate();
 
@@ -22,18 +25,22 @@ export default function Dashboard() {
     setProgress(0);
     const ext = /\.([^.]+)$/.exec(f.name)?.[1]?.toLowerCase() || "";
     try {
-      let importedDataset: any = null;
+      let importedDatasets: any[] = [];
       const name = f.name.replace(/\.[^.]+$/, "");
 
       // APK/offline-first import: never depend on the server for local files.
       if (ext === "xlsx" || ext === "xls") {
-        importedDataset = await parseExcelFile(f, name, setProgress);
-        await saveOfflineDataset(importedDataset);
+        importedDatasets = await parseExcelFile(f, name, setProgress);
+        setPreviewDatasets(importedDatasets);
+        setPreviewIndex(0);
+        return;
       } else if (ext === "csv" || ext === "txt" || ext === "tsv") {
         const text = await f.text();
         setProgress(100);
-        importedDataset = parseDelimited(text, name);
-        await saveOfflineDataset(importedDataset);
+        const dataset = parseDelimited(text, name);
+        setPreviewDatasets([dataset]);
+        setPreviewIndex(0);
+        return;
       } else if (ext === "dta" || ext === "sav" || ext === "zsav") {
         const form = new FormData();
         form.append("file", f);
@@ -47,7 +54,7 @@ export default function Dashboard() {
       }
 
       await refreshDatasets();
-      if (importedDataset) setActiveDataset(importedDataset);
+      if (importedDatasets.length) setActiveDataset(importedDatasets[0]);
       setProgress(100);
     } catch (e: any) {
       const message = String(e?.message || "Import failed.");
@@ -57,6 +64,17 @@ export default function Dashboard() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const confirmImport = async (allSheets=false) => {
+    if (!previewDatasets?.length) return;
+    setBusy(true);setErr(null);
+    try {
+      const chosen=allSheets?previewDatasets:[previewDatasets[previewIndex]];
+      for(const dataset of chosen)await saveOfflineDataset(dataset);
+      await refreshDatasets();setActiveDataset(chosen[0]);setPreviewDatasets(null);
+    } catch(e:any) { setErr(e.message||"Could not save the imported dataset."); }
+    finally { setBusy(false); }
   };
 
   const paste = async () => {
@@ -86,7 +104,28 @@ export default function Dashboard() {
     if (id < 0) await deleteOfflineDataset(id);
     else await api(`/api/datasets/${id}`, { method: "DELETE" });
     if (activeDataset?.id === id) setActiveDataset(null);
+    setSelectedIds((current) => { const next = new Set(current); next.delete(id); return next; });
     await refreshDatasets();
+  };
+
+  const deleteSelected = async () => {
+    const ids = [...selectedIds];
+    if (!ids.length || !confirm(`Delete ${ids.length} selected dataset${ids.length === 1 ? "" : "s"} and their results?`)) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      for (const id of ids) {
+        if (id < 0) await deleteOfflineDataset(id);
+        else await api(`/api/datasets/${id}`, { method: "DELETE" });
+      }
+      setSelectedIds(new Set());
+      await refreshDatasets();
+    } catch (e: any) {
+      setErr(e?.message || "Could not delete the selected datasets.");
+      await refreshDatasets();
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -101,6 +140,7 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Btn variant="ghost" onClick={() => nav("/guided-analysis")}>✦ Guided analysis</Btn>
           <input ref={fileRef} type="file" className="hidden" accept=".csv,.txt,.tsv,.xlsx,.xls,.dta,.sav,.zsav"
                  onChange={(e) => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ""; if (file) void upload(file); }} />
           <Btn variant="soft" onClick={() => setPasteOpen(true)}>📋 Paste data</Btn>
@@ -122,9 +162,32 @@ export default function Dashboard() {
         </div>
       )}
 
+      {previewDatasets?.length ? (() => {
+        const ds=previewDatasets[Math.min(previewIndex,previewDatasets.length-1)];
+        const missing=ds.rows.reduce((sum,row)=>sum+row.filter((v:any)=>v===null||v===undefined||v==="").length,0);
+        return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-3" onClick={()=>setPreviewDatasets(null)}>
+          <section className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-2xl bg-white p-5 shadow-2xl" onClick={e=>e.stopPropagation()}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div><h2 className="text-lg font-bold text-slate-900">Import preview</h2><p className="text-sm text-slate-500">Check the sheet, columns, and sample data before saving.</p></div>
+              {previewDatasets.length>1&&<label className="text-xs font-semibold text-slate-600">Excel sheet<select className="ml-2 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm" value={previewIndex} onChange={e=>setPreviewIndex(Number(e.target.value))}>{previewDatasets.map((sheet,i)=><option key={sheet.id} value={i}>{sheet.description?.replace(/^Excel sheet · /,"")||sheet.name}</option>)}</select></label>}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-600"><span><b>{ds.name}</b></span><span>{ds.n_rows.toLocaleString()} rows × {ds.n_cols} columns</span><span>{missing.toLocaleString()} missing cells</span><span>Previewing first {Math.min(10,ds.n_rows)} rows</span></div>
+            <div className="mt-3 max-h-[52vh] overflow-auto rounded-lg border border-slate-200"><table className="smx-table"><thead><tr>{ds.columns.map(c=><th key={c}>{c}</th>)}</tr></thead><tbody>{ds.rows.slice(0,10).map((row,ri)=><tr key={ri}>{ds.columns.map((_,ci)=><td key={ci}>{row[ci]===null||row[ci]===""?<span className="text-slate-300">Missing</span>:String(row[ci])}</td>)}</tr>)}</tbody></table></div>
+            <div className="mt-4 flex flex-wrap justify-end gap-2"><Btn variant="ghost" onClick={()=>setPreviewDatasets(null)} disabled={busy}>Cancel</Btn>{previewDatasets.length>1&&<Btn variant="soft" onClick={()=>void confirmImport(true)} disabled={busy}>Import all {previewDatasets.length} sheets</Btn>}<Btn onClick={()=>void confirmImport(false)} disabled={busy}>{busy?"Saving…":`Import ${previewDatasets.length>1?"selected sheet":"dataset"}`}</Btn></div>
+          </section>
+        </div>;
+      })() : null}
+
       <div className="rounded-xl border border-slate-200 bg-white p-4 text-[13px] text-slate-600">
         <span className="font-bold text-slate-800">Supported formats:</span>{" "}
         Offline: CSV · TXT/TSV · Excel (.xlsx). Stata (.dta) and SPSS (.sav) require a configured server connection.
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-slate-600">Select datasets to remove them from this device or account.</p>
+        <Btn variant="danger" onClick={deleteSelected} disabled={!selectedIds.size || busy}>
+          🗑 Delete selected ({selectedIds.size})
+        </Btn>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -134,17 +197,30 @@ export default function Dashboard() {
                  activeDataset?.id === d.id ? "border-sky-400 bg-sky-50/60 ring-1 ring-sky-200" : "border-slate-200 bg-white"
                }`}>
             <div className="flex items-start justify-between gap-2">
-              <button
-                className="text-left"
-                onClick={() => setActiveDataset(d)}
-                title="Set as active dataset"
-              >
-                <div className="text-[14.5px] font-bold text-slate-800">{d.name}</div>
-                <div className="mt-0.5 text-[12px] text-slate-500">
-                  {Number(d.n_rows ?? d.rows?.length ?? 0).toLocaleString()} rows × {Number(d.n_cols ?? d.columns?.length ?? 0)} variables · {d.source_format.toUpperCase()}
-                </div>
-              </button>
-              <button className="rounded-md p-1 text-slate-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+              <div className="flex min-w-0 items-start gap-2">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 shrink-0 accent-sky-600"
+                  checked={selectedIds.has(d.id)}
+                  aria-label={`Select ${d.name} for deletion`}
+                  onChange={(e) => setSelectedIds((current) => {
+                    const next = new Set(current);
+                    if (e.target.checked) next.add(d.id); else next.delete(d.id);
+                    return next;
+                  })}
+                />
+                <button
+                  className="text-left"
+                  onClick={() => setActiveDataset(d)}
+                  title="Set as active dataset"
+                >
+                  <div className="text-[14.5px] font-bold text-slate-800">{d.name}</div>
+                  <div className="mt-0.5 text-[12px] text-slate-500">
+                    {Number(d.n_rows ?? d.rows?.length ?? 0).toLocaleString()} rows × {Number(d.n_cols ?? d.columns?.length ?? 0)} variables · {String(d.source_format || "data").toUpperCase()}
+                  </div>
+                </button>
+              </div>
+              <button className="rounded-md p-1 text-slate-500 transition hover:bg-red-50 hover:text-red-600"
                       onClick={() => del(d.id)} title="Delete dataset">
                 🗑
               </button>
@@ -185,4 +261,3 @@ export default function Dashboard() {
     </div>
   );
 }
-
