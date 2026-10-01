@@ -17,7 +17,7 @@ export default function Console() {
   const [history, setHistory] = useState<string[]>([]);
   const [hIdx, setHIdx] = useState(-1);
   const [busy, setBusy] = useState(false);
-  const [examples, setExamples] = useState<string[]>(["help", "describe", "count", "list 10", "summarize"]);
+  const [examples, setExamples] = useState<string[]>(["help", "describe", "count", "list 10"]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -43,7 +43,7 @@ export default function Console() {
         const categorical = columns.find(col => col.type === "string" || (!col.numeric && !["int", "float"].includes(col.type || "")));
         const next = ["help", "describe", "count", "list 10"];
         if (numeric) next.push(`summarize ${numeric.name}`);
-        else next.push("summarize");
+        
         if (categorical) next.push(`tabulate ${categorical.name}`);
         if (!cancelled) setExamples([...new Set(next)]);
       } catch {
