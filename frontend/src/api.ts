@@ -1,6 +1,9 @@
-// Typed API client. In the web app, relative /api requests are used.
-// In the Android Capacitor app, VITE_API_URL points to the Render backend.
-const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+// Vite dev uses the local proxy. Production web/APK builds use the hosted API
+// by default, while VITE_API_URL can still override it for other deployments.
+const DEFAULT_API_URL = "https://statmedx-api.onrender.com";
+const API_BASE = (
+  import.meta.env.VITE_API_URL || (import.meta.env.PROD ? DEFAULT_API_URL : "")
+).replace(/\/$/, "");
 const TOKEN_KEY = "statmedx_token";
 const USER_KEY = "statmedx_user";
 
