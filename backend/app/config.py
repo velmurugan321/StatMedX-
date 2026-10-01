@@ -5,10 +5,13 @@ import warnings
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent          # backend/
-DATA_DIR = BASE_DIR / "data"                                # uploaded datasets (pickled DataFrames)
+# Set STATMEDX_STORAGE_DIR to the Render disk mount (for example /var/data)
+# to keep both the SQLite database and uploaded dataset files across restarts.
+STORAGE_DIR = Path(os.getenv("STATMEDX_STORAGE_DIR", str(BASE_DIR)))
+DATA_DIR = Path(os.getenv("STATMEDX_DATA_DIR", str(STORAGE_DIR / "data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-DATABASE_URL = os.getenv("STATMEDX_DB", f"sqlite:///{BASE_DIR / 'statmedx.db'}")
+DATABASE_URL = os.getenv("STATMEDX_DB", f"sqlite:///{STORAGE_DIR / 'statmedx.db'}")
 
 # --- JWT signing secret ---------------------------------------------------
 # Never ship a hardcoded fallback: a publicly-known secret lets anyone forge
