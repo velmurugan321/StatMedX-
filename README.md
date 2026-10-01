@@ -46,11 +46,25 @@ browser-side analyses. Server-only analyses show
 an explicit message while offline. Stata/SPSS imports and the full analysis
 catalog need a FastAPI server.
 
-To enable server features in an APK build, set the repository Actions variable
-`STATMEDX_API_URL` to the HTTPS base URL of the deployed FastAPI service. The
-Android workflow passes this as `VITE_API_URL`; leaving it unset keeps the app
-in offline mode. Pull requests build the APK and run the backend validation
-suite.
+Production web and APK builds use `https://statmedx-api.onrender.com` by default.
+Set the repository Actions variable `STATMEDX_API_URL` only to override that
+endpoint. Local Vite development uses its `/api` proxy. Pull requests build the
+APK and run the backend validation suite.
+
+## Persistent Render storage
+
+The backend stores its SQLite database and uploaded dataset files under
+`STATMEDX_STORAGE_DIR`. By default, this is the local `backend/` directory for
+development. On Render, set `STATMEDX_STORAGE_DIR=/var/data` and attach a
+persistent disk mounted at `/var/data`; both the database and uploaded files
+will then survive restarts and deploys. Also set `STATMEDX_ENV=production` and
+`STATMEDX_SECRET` to a stable generated secret so sessions remain valid after
+restarts.
+
+Render Free web services cannot attach disks. A paid Starter web service is
+currently $7/month; a 1 GB persistent disk adds $0.25/month (about $7.25/month
+before bandwidth or other usage). A disk-backed service runs one instance and
+has a brief interruption during deploys.
 
 ## Architecture
 
