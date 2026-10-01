@@ -17,7 +17,42 @@ export default function Console() {
   const [history, setHistory] = useState<string[]>([]);
   const [hIdx, setHIdx] = useState(-1);
   const [busy, setBusy] = useState(false);
+  const [examples, setExamples] = useState<string[]>(["help", "describe", "count", "list 10", "summarize"]);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadExamples = async () => {
+      if (!activeDataset) {
+        setExamples(["help", "describe", "count", "list 10"]);
+        return;
+      }
+      try {
+        let columns: Array<{ name: string; type?: string; numeric?: boolean }> = [];
+        if (activeDataset.id < 0) {
+          const ds = await getOfflineDataset(activeDataset.id);
+          columns = (ds?.columns || []).map((name, i) => ({
+            name,
+            numeric: !!ds?.rows.some(row => typeof row[i] === "number" && Number.isFinite(row[i])),
+          }));
+        } else {
+          const page = await api<any>(`/api/datasets/${activeDataset.id}/data?page=1&size=1`);
+          columns = Array.isArray(page?.columns) ? page.columns : [];
+        }
+        const numeric = columns.find(col => col.numeric || col.type === "int" || col.type === "float");
+        const categorical = columns.find(col => col.type === "string" || (!col.numeric && !["int", "float"].includes(col.type || "")));
+        const next = ["help", "describe", "count", "list 10"];
+        if (numeric) next.push(`summarize ${numeric.name}`);
+        else next.push("summarize");
+        if (categorical) next.push(`tabulate ${categorical.name}`);
+        if (!cancelled) setExamples([...new Set(next)]);
+      } catch {
+        if (!cancelled) setExamples(["help", "describe", "count", "list 10", "summarize"]);
+      }
+    };
+    void loadExamples();
+    return () => { cancelled = true; };
+  }, [activeDataset?.id, activeDataset?.remote_dataset_id]);
 
   useEffect(() => {
     const key = `statmedx_command_history_${activeDataset?.id}`;
@@ -219,6 +254,19 @@ export default function Console() {
         </p>
       </div>
 
+      <section className="rounded-xl border border-slate-200 bg-white p-3">
+        <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Examples · tap to fill command</div>
+        <div className="flex flex-wrap gap-1.5">
+          {examples.map(example => (
+            <button key={example} type="button" disabled={busy} onClick={() => setInput(example)}
+                    className="mono rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11.5px] text-slate-700 hover:border-sky-300 hover:text-sky-700 disabled:opacity-50">
+              {example}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-[11px] text-slate-400">Examples use this dataset’s variable names where possible. Use <code className="mono">help</code> to see the supported command list.</p>
+      </section>
+
       <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-inner">
         {entries.length === 0 && (
           <div className="mono mb-3 text-[12.5px] text-slate-400">
@@ -234,7 +282,7 @@ export default function Console() {
               <div className="mono text-[13px] text-emerald-300">
                 <span className="text-slate-500">.</span> {en.cmd}
               </div>
-              {en.error && <div className="mono mt-1 text-[12.5px] text-red-400">error: {en.error}</div>}
+              {en.error && <div className="mono mt-1 text-[12.5px] text-red-400">error: {en.error}<div className="mt-1 font-sans text-[11px] text-red-300">Tip: use <code>describe</code> to check variable names, or choose an example above.</div></div>}
               {en.result && (
                 <div className="mt-1.5 rounded-xl bg-white p-3">
                   <ResultsView result={en.result} compact />
