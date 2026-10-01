@@ -168,6 +168,29 @@ export default function DataEditor() {
     finally { setQualityBusy(false); }
   };
 
+  const exportQualityReport = () => {
+    if (!qualityReport) return;
+    const escapeCsv = (value: any) => {
+      const text = value == null ? "" : String(value);
+      return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const rows = [
+      ["Variable", "Missing", "Missing %", "Distinct", "IQR outliers", "Mixed types", "Constant"],
+      ...qualityReport.variables.map((v: any) => [
+        v.name, v.missing, v.missingPercent.toFixed(1), v.unique, v.outliers, v.mixedTypes, v.constant,
+      ]),
+    ];
+    const csv = "\\uFEFF" + rows.map(row => row.map(escapeCsv).join(",")).join("\\r\\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const name = (activeDataset?.name || "dataset").replace(/[^a-z0-9_-]+/gi, "_");
+    link.href = url;
+    link.download = `${name}-quality-report.csv`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   const totalPages = data ? Math.max(1, Math.ceil(data.total / pageSize)) : 1;
   const cols: any[] = Array.isArray(schema?.columns) ? schema.columns : [];
 
@@ -366,7 +389,10 @@ export default function DataEditor() {
         <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
           <div className="flex items-center justify-between gap-2">
             <div><h2 className="font-bold text-slate-800">Data quality</h2><p className="text-xs text-slate-500">Review these flags before analysis; they do not change your data.</p></div>
-            <button className="rounded px-2 py-1 text-sm text-slate-500 hover:bg-slate-100" onClick={() => setQualityReport(null)} aria-label="Close data quality report">✕</button>
+            <div className="flex items-center gap-2">
+              <Btn variant="soft" onClick={exportQualityReport}>⬇ Export CSV</Btn>
+              <button className="rounded px-2 py-1 text-sm text-slate-500 hover:bg-slate-100" onClick={() => setQualityReport(null)} aria-label="Close data quality report">✕</button>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
             {[["Missing cells",qualityReport.missingCells],["Duplicate rows",qualityReport.duplicateRows],["Variables",qualityReport.columnCount],["Observations",qualityReport.rowCount]].map(([label,value]:any)=>(
