@@ -124,12 +124,12 @@ export default function Results() {
             {selected.id < 0 ? <>
               <Btn variant="ghost" onClick={() => { try { exportOffline("excel"); } catch (e: any) { setErr(e?.message || "Excel export failed."); } }}>⬇ Excel</Btn>
               <Btn variant="ghost" onClick={() => { try { exportOffline("csv"); } catch (e: any) { setErr(e?.message || "CSV export failed."); } }}>⬇ CSV</Btn>
-              <Btn variant="ghost" onClick={printReport} title="Choose Save as PDF in the print dialog">⬇ PDF / Print</Btn>
+              <Btn variant="ghost" onClick={printReport}>⬇ PDF / Print</Btn>
             </> : <>
               <Btn variant="ghost" onClick={() => downloadFile(`/api/results/${selected.id}/export?format=excel`, `${selected.module}-results.xlsx`).catch((e: any) => setErr(e.message))}>⬇ Excel</Btn>
               <Btn variant="ghost" onClick={() => downloadFile(`/api/results/${selected.id}/export?format=csv`, `${selected.module}-results.csv`).catch((e: any) => setErr(e.message))}>⬇ CSV</Btn>
               <Btn variant="ghost" onClick={() => downloadFile(`/api/results/${selected.id}/export?format=docx`, `${selected.module}-results.docx`).catch((e: any) => setErr(e.message))}>⬇ Word</Btn>
-              <Btn variant="ghost" onClick={printReport} title="Choose Save as PDF in the print dialog">⬇ PDF / Print</Btn>
+              <Btn variant="ghost" onClick={printReport}>⬇ PDF / Print</Btn>
             </>}
           </div>
         )}
@@ -171,3 +171,4 @@ export default function Results() {
     </div>
   );
 }
+
