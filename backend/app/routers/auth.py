@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
-from ..auth_utils import create_token, hash_password, verify_password
+from ..auth_utils import create_token, get_current_user, hash_password, verify_password
 from ..database import get_db
 from ..models import User
 
@@ -65,5 +65,5 @@ def demo_login(db: Session = Depends(get_db)):
 
 
 @router.get("/me")
-def me(user: User = Depends(__import__("app.auth_utils", fromlist=["get_current_user"]).get_current_user)):
+def me(user: User = Depends(get_current_user)):
     return _user_out(user)
